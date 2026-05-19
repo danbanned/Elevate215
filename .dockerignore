@@ -1,0 +1,17 @@
+**/node_modules
+**/.next
+**/.turbo
+**/dist
+**/out
+**/coverage
+.git
+.github
+.vscode
+.idea
+*.log
+.DS_Store
+.env
+.env.local
+.env.*.local
+docker-compose.yml
+infra/postgres-init

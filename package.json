@@ -7,6 +7,9 @@
     "db:migrate": "pnpm --filter @lp-ai/db migrate",
     "db:studio": "pnpm --filter @lp-ai/db studio",
     "db:push": "pnpm --filter @lp-ai/db push",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:seed": "pnpm --filter @lp-ai/db seed",
     "sync:sheets": "pnpm --filter @lp-ai/connector-google-sheets sync",
     "sync:drive": "pnpm --filter @lp-ai/connector-google-drive sync",
     "sync:bigquery": "pnpm --filter @lp-ai/connector-bigquery sync",
@@ -16,16 +19,28 @@
     "sync:roam": "pnpm --filter @lp-ai/connector-roam sync",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "lint": "pnpm -r lint"
+    "lint": "pnpm -r lint",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
     "typescript": "^5.4.5",
     "eslint": "^9.0.0",
-    "prettier": "^3.3.0"
+    "prettier": "^3.3.0",
+    "vitest": "^2.0.0",
+    "dotenv": "^16.4.5"
   },
   "engines": {
     "node": ">=20",
     "pnpm": ">=9"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma",
+      "esbuild"
+    ]
   }
 }
