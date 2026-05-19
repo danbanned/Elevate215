@@ -1,0 +1,31 @@
+{
+  "name": "lp-internal-ai-v1",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "db:generate": "pnpm --filter @lp-ai/db generate",
+    "db:migrate": "pnpm --filter @lp-ai/db migrate",
+    "db:studio": "pnpm --filter @lp-ai/db studio",
+    "db:push": "pnpm --filter @lp-ai/db push",
+    "sync:sheets": "pnpm --filter @lp-ai/connector-google-sheets sync",
+    "sync:drive": "pnpm --filter @lp-ai/connector-google-drive sync",
+    "sync:bigquery": "pnpm --filter @lp-ai/connector-bigquery sync",
+    "sync:givebutter": "pnpm --filter @lp-ai/connector-givebutter sync",
+    "sync:aplos": "pnpm --filter @lp-ai/connector-aplos sync",
+    "sync:slack": "pnpm --filter @lp-ai/connector-slack sync",
+    "sync:roam": "pnpm --filter @lp-ai/connector-roam sync",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.4.5",
+    "eslint": "^9.0.0",
+    "prettier": "^3.3.0"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  }
+}
