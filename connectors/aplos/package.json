@@ -1,0 +1,21 @@
+{
+  "name": "@lp-ai/connector-aplos",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "sync": "node --env-file=../../.env dist/cli.js",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lp-ai/config": "workspace:*",
+    "@lp-ai/db": "workspace:*",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}
