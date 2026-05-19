@@ -1,0 +1,25 @@
+{
+  "name": "@lp-ai/mcp-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "dev": "node --env-file=../../.env --watch dist/index.js",
+    "dev:http": "node --env-file=../../.env --watch dist/serve-http.js",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "start:http": "node dist/serve-http.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lp-ai/config": "workspace:*",
+    "@lp-ai/db": "workspace:*",
+    "@lp-ai/embedding": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}

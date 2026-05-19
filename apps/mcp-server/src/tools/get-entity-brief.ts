@@ -1,0 +1,175 @@
+import { z } from 'zod';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { prisma, resolveEntity, getAliases } from '@lp-ai/db';
+
+import { runTool } from '../tool-helpers.js';
+import { toolError } from '../errors.js';
+
+const NAME = 'get_entity_brief';
+
+const DESCRIPTION =
+  'Get a comprehensive brief on a student: profile, phase progression, certifications, and recent Drive document mentions. Also surfaces donor information (giving history, pipeline, grants) when the named person matches a Development CRM donor. Use this as a starting point when asked to summarize or give an overview of a person.';
+
+const SOURCES_ACTIVE = ['google_sheets', 'google_drive'] as const;
+const SOURCES_DEFERRED = ['bigquery_attendance', 'slack', 'meeting_transcripts'] as const;
+
+const inputSchema = {
+  person_name: z
+    .string()
+    .describe('Name, nickname, or handle of the student, staff member, or donor.'),
+};
+
+export function registerGetEntityBrief(server: McpServer): void {
+  server.registerTool(NAME, { description: DESCRIPTION, inputSchema }, (input) =>
+    runTool(NAME, input, async () => {
+      const raw = input as Record<string, unknown>;
+      const personName =
+        typeof raw['person_name'] === 'string' ? raw['person_name'] : '';
+      if (!personName.trim()) {
+        return toolError('entity_not_found', 'person_name is required.');
+      }
+
+      const resolved = await resolveEntity(personName);
+
+      const donorMatches = await prisma.donorContact.findMany({
+        where: {
+          OR: [
+            { firstName: { contains: personName, mode: 'insensitive' } },
+            { lastName: { contains: personName, mode: 'insensitive' } },
+            { organizationName: { contains: personName, mode: 'insensitive' } },
+          ],
+        },
+        take: 3,
+      });
+
+      if (!resolved && donorMatches.length === 0) {
+        return toolError(
+          'entity_not_found',
+          `Could not resolve '${personName}' to a student, staff member, or donor.`,
+        );
+      }
+
+      const result: Record<string, unknown> = {
+        sources_active: SOURCES_ACTIVE,
+        sources_deferred: SOURCES_DEFERRED,
+      };
+
+      if (resolved?.student) {
+        const student = resolved.student;
+        const [phaseOutcomes, certifications, aliases, info] = await Promise.all([
+          prisma.studentPhaseOutcome.findMany({
+            where: { studentId: student.id },
+            orderBy: { startDate: 'asc' },
+          }),
+          prisma.studentCertification.findMany({
+            where: { studentId: student.id },
+            orderBy: { issuedDate: 'desc' },
+          }),
+          getAliases(student.id),
+          prisma.studentInfo.findMany({
+            where: { studentId: student.id },
+            orderBy: { syncedAt: 'desc' },
+            take: 1,
+          }),
+        ]);
+
+        result['entity'] = {
+          id: student.id,
+          canonical_name: student.canonicalName,
+          entity_type: 'student',
+        };
+        result['profile'] = {
+          id: student.id,
+          student_number: student.studentNumber,
+          canonical_name: student.canonicalName,
+          email: student.email,
+          current_phase: student.currentPhase,
+          enrollment_status: student.enrollmentStatus,
+          cohort: student.cohort,
+          neighborhood: student.neighborhood,
+        };
+        result['known_aliases'] = aliases.map((a) => ({
+          source: a.source,
+          alias: a.alias,
+          confidence: a.confidence,
+        }));
+        result['phase_progression'] = phaseOutcomes.map((p) => ({
+          phase: p.phase,
+          outcome: p.outcome,
+          exit_reason: p.exitReason,
+          start_date: p.startDate,
+          end_date: p.endDate,
+        }));
+        result['certifications'] = certifications.map((c) => ({
+          cert_name: c.certName,
+          phase: c.phase,
+          result: c.result,
+          score: c.score,
+          issued_date: c.issuedDate,
+        }));
+        result['drive_notes_excerpt'] = info[0]?.content.slice(0, 1000) ?? null;
+        result['entity_confidence'] = resolved.confidence;
+      } else if (resolved?.staff) {
+        const staff = resolved.staff;
+        result['entity'] = {
+          id: staff.id,
+          canonical_name: staff.canonicalName,
+          entity_type: 'staff',
+        };
+        result['profile'] = {
+          id: staff.id,
+          canonical_name: staff.canonicalName,
+          email: staff.email,
+          role: staff.role,
+        };
+        result['entity_confidence'] = resolved.confidence;
+      }
+
+      if (donorMatches.length > 0) {
+        const [topDonor] = donorMatches;
+        if (topDonor) {
+          const [gifts, pipeline] = await Promise.all([
+            prisma.donorGift.findMany({
+              where: { donorContactId: topDonor.id },
+              orderBy: { giftDate: 'desc' },
+            }),
+            prisma.donorPipeline.findMany({
+              where: { donorContactId: topDonor.id },
+            }),
+          ]);
+          result['donor_profile'] = {
+            id: topDonor.id,
+            first_name: topDonor.firstName,
+            last_name: topDonor.lastName,
+            organization_name: topDonor.organizationName,
+            email: topDonor.email,
+          };
+          result['donor_giving_history'] = gifts.map((g) => ({
+            amount: g.amount,
+            gift_date: g.giftDate,
+            campaign_name: g.campaignName,
+            fund: g.fund,
+            is_recurring: g.isRecurring,
+          }));
+          result['donor_prospect_pipeline'] = pipeline.map((p) => ({
+            stage: p.stage,
+            ask_amount: p.askAmount,
+            likelihood: p.likelihood,
+            notes: p.notes,
+          }));
+        }
+        if (!result['entity']) {
+          result['entity'] = {
+            id: topDonor?.id ?? null,
+            canonical_name:
+              topDonor?.organizationName ??
+              `${topDonor?.firstName ?? ''} ${topDonor?.lastName ?? ''}`.trim(),
+            entity_type: 'donor',
+          };
+        }
+      }
+
+      return result;
+    }),
+  );
+}
