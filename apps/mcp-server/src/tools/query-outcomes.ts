@@ -8,7 +8,7 @@ import { toolError } from '../errors.js';
 const NAME = 'query_outcomes';
 
 const DESCRIPTION =
-  'Look up Beacon Learning Management System outcomes and competency assessments for a student. Returns competency levels and scores. Use this tool when asked about student progress, competency development, or academic outcomes.';
+  'Look up competency outcomes for a student (baseline, performance level, growth, progress, ER counts). Use this when asked about a student\'s competency development.';
 
 const inputSchema = {
   student_name: z
@@ -18,26 +18,17 @@ const inputSchema = {
   competency: z
     .string()
     .optional()
-    .describe('Optional: filter to a specific competency name (partial match supported).'),
-  term: z
-    .string()
-    .optional()
-    .describe('Optional: filter to a specific term (e.g. "Spring 2024").'),
+    .describe('Optional: filter to a specific competency name (partial match).'),
 };
 
 export function registerQueryOutcomes(server: McpServer): void {
   server.registerTool(NAME, { description: DESCRIPTION, inputSchema }, (input) =>
     runTool(NAME, input, async () => {
-      const raw = input as {
-        student_name?: unknown;
-        competency?: unknown;
-        term?: unknown;
-      };
+      const raw = input as { student_name?: unknown; competency?: unknown };
       const studentName =
         typeof raw.student_name === 'string' ? raw.student_name : '';
       const competency =
         typeof raw.competency === 'string' ? raw.competency : undefined;
-      const term = typeof raw.term === 'string' ? raw.term : undefined;
 
       if (!studentName.trim()) {
         return toolError(
@@ -54,15 +45,22 @@ export function registerQueryOutcomes(server: McpServer): void {
         );
       }
 
+      const sn = resolved.student.studentNumber;
+      if (!sn) {
+        return toolError(
+          'no_records',
+          `Student '${resolved.student.canonicalName}' has no student_number to join on.`,
+        );
+      }
+
       const rows = await prisma.studentCompetency.findMany({
         where: {
-          studentId: resolved.student.id,
+          studentNumber: sn,
           ...(competency
-            ? { competencyArea: { contains: competency, mode: 'insensitive' } }
+            ? { competency: { contains: competency, mode: 'insensitive' } }
             : {}),
-          ...(term ? { term } : {}),
         },
-        orderBy: [{ assessedDate: 'desc' }, { competencyArea: 'asc' }],
+        orderBy: [{ competency: 'asc' }],
       });
 
       if (rows.length === 0) {
@@ -76,14 +74,19 @@ export function registerQueryOutcomes(server: McpServer): void {
         student: {
           id: resolved.student.id,
           canonical_name: resolved.student.canonicalName,
+          student_number: sn,
         },
         outcomes: rows.map((r) => ({
-          competency: r.competencyArea,
-          skill: r.skillName,
-          level: r.rubricLevel,
-          score: r.score,
-          assessed_at: r.assessedDate,
-          term: r.term,
+          competency: r.competency,
+          portfolio: r.portfolio,
+          baseline: r.baseline,
+          performance_level: r.performanceLevel,
+          growth: r.growth,
+          progress: r.progress,
+          total_er: r.totalEr,
+          completed_er: r.completedEr,
+          missed_er: r.missedEr,
+          total_opportunities: r.totalOpportunities,
         })),
         entity_resolved: true,
         entity_confidence: resolved.confidence,

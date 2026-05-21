@@ -11,26 +11,51 @@ datasource db {
 }
 
 model Student {
-  id                String    @id @default(uuid())
-  studentNumber     String?   @unique @map("student_number")
-  canonicalName     String    @map("canonical_name")
-  email             String?
-  phone             String?
-  currentPhase      String?   @map("current_phase")
-  enrollmentStatus  String?   @map("enrollment_status")
-  cohort            String?
-  distanceToOffice  Float?    @map("distance_to_office")
-  neighborhood      String?
-  graduationDate    DateTime? @map("graduation_date")
-  createdAt         DateTime  @default(now()) @map("created_at")
-  updatedAt         DateTime  @updatedAt @map("updated_at")
+  id                       String    @id @default(uuid())
+  studentNumber            String?   @unique @map("student_number")
+  canonicalName            String    @map("canonical_name")
+  email                    String?
+  phone                    String?
+  currentPhase             String?   @map("current_phase")
+  enrollmentStatus         String?   @map("enrollment_status")
+  cohort                   String?
+  distanceToOffice         Float?    @map("distance_to_office")
+  neighborhood             String?
+  graduationDate           DateTime? @map("graduation_date")
+
+  gender                   String?
+  raceEthnicity            String?   @map("race_ethnicity")
+  schoolName               String?   @map("school_name")
+  hsGraduationYear         Int?      @map("hs_graduation_year")
+  entryDate                DateTime? @map("entry_date") @db.Date
+  withdrawalDate           DateTime? @map("withdrawal_date") @db.Date
+  withdrawalCode           String?   @map("withdrawal_code")
+  zip                      String?
+  city                     String?
+  state                    String?
+  launchpadEmail           String?   @map("launchpad_email")
+  workforceProgramReferral String?   @map("workforce_program_referral")
+  workforceReferralStatus  String?   @map("workforce_referral_status")
+  internshipStatus         String?   @map("internship_status")
+  interviewScore           Decimal?  @map("interview_score") @db.Decimal(5, 2)
+  techInterestOnboarding   Int?      @map("tech_interest_onboarding")
+  interviewPassionScore    Int?      @map("interview_passion_score")
+  interviewCollegeScore    Int?      @map("interview_college_score")
+  hsGpa                    Decimal?  @map("hs_gpa") @db.Decimal(4, 2)
+  algebra1Grade            String?   @map("algebra1_grade")
+  geometryGrade            String?   @map("geometry_grade")
+  collegeEnroll            String?   @map("college_enroll")
+  university               String?
+  major                    String?
+  income                   String?
+  parentalEd               String?   @map("parental_ed")
+
+  createdAt                DateTime  @default(now()) @map("created_at")
+  updatedAt                DateTime  @updatedAt @map("updated_at")
 
   aliases           EntityAlias[]
   certifications    StudentCertification[]
   phaseOutcomes     StudentPhaseOutcome[]
-  competencies      StudentCompetency[]
-  enrollmentSnaps   EnrollmentSnapshot[]
-  attendanceRecords AttendanceRecord[]
   studentInfo       StudentInfo[]
 
   @@index([canonicalName])
@@ -94,101 +119,110 @@ model StudentInfo {
 }
 
 model StudentCertification {
-  id             String   @id @default(uuid())
-  studentId      String   @map("student_id")
-  certName       String   @map("cert_name")
-  issuedDate     String?  @map("issued_date")
-  expirationDate String?  @map("expiration_date")
-  status         String?
-  score          Float?
-  result         String?
-  phase          String?
-  syncedAt       DateTime @default(now()) @map("synced_at")
+  id           String   @id @default(uuid())
+  sourceId     String   @unique @map("source_id")
+  studentId    String   @map("student_id")
+  type         String?
+  date         String?
+  result       String?
+  score        Decimal? @db.Decimal(5, 2)
+  phase        String
+  lastSyncedAt DateTime @default(now()) @map("last_synced_at")
 
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
-  @@index([certName])
+  @@index([studentId])
   @@index([phase])
+  @@index([type])
+  @@index([date])
   @@map("student_certifications")
 }
 
 model StudentPhaseOutcome {
-  id         String   @id @default(uuid())
-  studentId  String   @map("student_id")
-  phase      String
-  outcome    String?
-  exitReason String?  @map("exit_reason")
-  startDate  String?  @map("start_date")
-  endDate    String?  @map("end_date")
-  syncedAt   DateTime @default(now()) @map("synced_at")
+  id                   String    @id @default(uuid())
+  studentId            String    @unique @map("student_id")
+  foundationsStatus    String?   @map("foundations_status")
+  foundationsStartDate DateTime? @map("foundations_start_date") @db.Date
+  foundationsEndDate   DateTime? @map("foundations_end_date") @db.Date
+  phase101Status       String?   @map("phase_101_status")
+  phase101StartDate    DateTime? @map("phase_101_start_date") @db.Date
+  phase101EndDate      DateTime? @map("phase_101_end_date") @db.Date
+  lightspeedStatus     String?   @map("lightspeed_status")
+  lightspeedStartDate  DateTime? @map("lightspeed_start_date") @db.Date
+  lightspeedEndDate    DateTime? @map("lightspeed_end_date") @db.Date
+  liftoffStatus        String?   @map("liftoff_status")
+  liftoffStartDate     DateTime? @map("liftoff_start_date") @db.Date
+  liftoffEndDate       DateTime? @map("liftoff_end_date") @db.Date
+  lastSyncedAt         DateTime  @default(now()) @map("last_synced_at")
 
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
-  @@index([phase])
+  @@index([studentId])
   @@map("student_phase_outcomes")
 }
 
 model StudentCompetency {
-  id             String   @id @default(uuid())
-  studentId      String   @map("student_id")
-  competencyArea String   @map("competency_area")
-  skillName      String   @map("skill_name")
-  score          Float?
-  rubricLevel    String?  @map("rubric_level")
-  assessedDate   String?  @map("assessed_date")
-  term           String?
-  syncedAt       DateTime @default(now()) @map("synced_at")
+  id                 String   @id @default(uuid())
+  sourceId           String   @unique @map("source_id")
+  studentNumber      String   @map("student_number")
+  competency         String
+  portfolio          String?
+  baseline           Decimal? @db.Decimal(5, 2)
+  performanceLevel   Decimal? @map("performance_level") @db.Decimal(5, 2)
+  growth             Decimal? @db.Decimal(5, 2)
+  progress           Decimal? @db.Decimal(5, 2)
+  totalEr            Int?     @map("total_er")
+  completedEr        Int?     @map("completed_er")
+  missedEr           Int?     @map("missed_er")
+  totalOpportunities Int?     @map("total_opportunities")
+  lastSyncedAt       DateTime @default(now()) @map("last_synced_at")
 
-  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
-
-  @@index([competencyArea])
+  @@index([studentNumber])
+  @@index([competency])
   @@map("student_competencies")
 }
 
 model EnrollmentSnapshot {
-  id           String   @id @default(uuid())
-  studentId    String   @map("student_id")
+  sourceId     String   @id @map("source_id")
+  periodMonth  DateTime @map("period_month") @db.Date
   phase        String
-  status       String?
-  snapshotDate String   @map("snapshot_date")
-  syncedAt     DateTime @default(now()) @map("synced_at")
+  count        Decimal  @db.Decimal(10, 2)
+  lastSyncedAt DateTime @default(now()) @map("last_synced_at")
 
-  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
-
+  @@index([periodMonth])
+  @@index([phase])
   @@map("enrollment_snapshots")
 }
 
 model AttendanceRecord {
-  id             String   @id @default(uuid())
-  studentId      String   @map("student_id")
-  cohort         String
-  weekOf         String?  @map("week_of")
-  attendanceDate String?  @map("attendance_date")
-  status         String?
-  code           String?
-  percentage     Float?
-  rowData        Json?    @map("row_data")
-  syncedAt       DateTime @default(now()) @map("synced_at")
+  id            String    @id @default(uuid())
+  sourceId      String    @unique @map("source_id")
+  cohort        Int
+  studentNumber String    @map("student_number")
+  date          DateTime? @db.Date
+  startDate     DateTime? @map("start_date") @db.Date
+  endDate       DateTime? @map("end_date") @db.Date
+  code          String?
+  percentage    Decimal?  @db.Decimal(5, 2)
+  rowData       Json      @map("row_data")
+  lastSyncedAt  DateTime  @default(now()) @map("last_synced_at")
 
-  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
-
-  @@index([cohort])
+  @@index([studentNumber])
+  @@index([cohort, date])
+  @@index([date])
   @@map("attendance_records")
 }
 
 model FinanceSnapshot {
-  id          String   @id @default(uuid())
-  category    String
-  subcategory String?
-  amount      Float
-  period      String
-  fundOrPhase String?  @map("fund_or_phase")
-  source      String?
-  tab         String?
-  rowData     Json?    @map("row_data")
-  syncedAt    DateTime @default(now()) @map("synced_at")
+  id           String   @id @default(uuid())
+  sourceId     String   @unique @map("source_id")
+  tabName      String   @map("tab_name")
+  period       String?
+  rowData      Json     @map("row_data")
+  lastSyncedAt DateTime @default(now()) @map("last_synced_at")
 
-  @@index([tab])
+  @@index([tabName])
+  @@index([period])
   @@map("finance_snapshots")
 }
 

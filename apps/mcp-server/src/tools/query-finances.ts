@@ -8,7 +8,7 @@ import { runTool } from '../tool-helpers.js';
 const NAME = 'query_finances';
 
 const DESCRIPTION =
-  'Look up financial data — budgets, actuals, forecasts, fund balances, stipend transactions, and Building21 fundraising/development records. Use for spending, budget vs. actual variances, phase cost allocations, Rapid/PEX payment history, year-over-year trends, donor gifts, prospect pipeline, and grant lifecycle. Development CRM types (dev_*) cover all B21 fundraising; pass launchpad_only=false to see non-Launchpad data.';
+  'Look up financial data from finance_snapshots. Each query_type maps to one or more sheet tabs. Returns the raw rowData JSON so the caller can read whichever columns matter for the question.';
 
 const inputSchema = {
   query_type: z.enum([
@@ -39,20 +39,41 @@ const inputSchema = {
     'dev_grants_tracker',
     'dev_contacts',
   ]),
-  fund: z.string().optional(),
-  category: z.string().optional(),
-  row_type: z.enum(['detail', 'summary', 'all']).optional(),
-  launchpad_only: z.boolean().optional(),
-  donor: z.string().optional(),
+  tab_name: z.string().optional().describe('Override tab_name match (advanced).'),
+  period: z.string().optional(),
+  contains: z.string().optional().describe('Substring match against the JSON-serialized rowData.'),
+  limit: z.number().optional(),
 };
 
 const QUERY_TYPE_TO_TAB: Record<string, string> = {
-  prior_month: 'prior_month',
-  ytd: 'ytd',
-  forecast: 'forecast',
-  monthly: 'monthly',
+  prior_month: 'Prior Month Budget vs Actual',
+  ytd: 'YTD Budget vs Actual',
+  forecast: 'Rolling Forecast',
+  monthly: 'Monthly',
   fund_balances: 'fund_balances',
-  annual: 'annual',
+  annual: 'Annual',
+  phase_budget_dashboard: 'phase_dashboard:2025 Actuals',
+  phase_budget_monthly_liftoff: 'phase_dashboard:Monthly LiftOff Only',
+  phase_budget_monthly_hs: 'phase_dashboard:Monthly HS Only',
+  q3_2026_actuals_global_pct: 'q3_2026_actuals:global %',
+  q3_2026_actuals_hc_pct: 'q3_2026_actuals:Human capital %',
+  q3_2026_actuals: 'q3_2026_actuals:actuals by phase',
+  phase_actuals_2025_global_pct: 'phase_actuals_2025:global %',
+  phase_actuals_2025_hc_pct: 'phase_actuals_2025:Human capital %',
+  phase_actuals_2025_actuals: 'phase_actuals_2025:actuals by phase',
+  rapid_dashboard: 'rapid:Dashboard',
+  pex_dashboard: 'pex:Dashboard',
+  dev_giving_history: 'development:Giving History',
+  dev_prospect_pipeline: 'development:Prospect Pipeline',
+  dev_denied: 'development:Denied',
+  dev_launchpad_pipeline: 'development:Launchpad Pipeline',
+  dev_grants_tracker: 'development:Grants Tracker',
+  dev_contacts: 'development:Contacts',
+};
+
+const QUERY_TYPE_TO_TAB_PREFIX: Record<string, string> = {
+  rapid_transactions: 'rapid:FY',
+  pex_transactions: 'pex:FY',
 };
 
 export function registerQueryFinances(server: McpServer): void {
@@ -60,37 +81,39 @@ export function registerQueryFinances(server: McpServer): void {
     runTool(NAME, input, async () => {
       const raw = input as Record<string, unknown>;
       const queryType = String(raw['query_type'] ?? '');
-      const fundFilter =
-        typeof raw['fund'] === 'string' ? (raw['fund'] as string) : undefined;
-      const categoryFilter =
-        typeof raw['category'] === 'string' ? (raw['category'] as string) : undefined;
+      const tabOverride =
+        typeof raw['tab_name'] === 'string' ? (raw['tab_name'] as string) : undefined;
+      const periodFilter =
+        typeof raw['period'] === 'string' ? (raw['period'] as string) : undefined;
+      const limit = Math.min(typeof raw['limit'] === 'number' ? (raw['limit'] as number) : 500, 1000);
 
-      const tab = QUERY_TYPE_TO_TAB[queryType] ?? queryType;
-      const where: Prisma.FinanceSnapshotWhereInput = { tab };
-      if (fundFilter) {
-        where.fundOrPhase = { contains: fundFilter, mode: 'insensitive' };
+      const where: Prisma.FinanceSnapshotWhereInput = {};
+      const mappedTab = QUERY_TYPE_TO_TAB[queryType];
+      const mappedPrefix = QUERY_TYPE_TO_TAB_PREFIX[queryType];
+      if (tabOverride) {
+        where.tabName = tabOverride;
+      } else if (mappedTab) {
+        where.tabName = mappedTab;
+      } else if (mappedPrefix) {
+        where.tabName = { startsWith: mappedPrefix };
+      } else {
+        where.tabName = queryType;
       }
-      if (categoryFilter) {
-        where.category = { contains: categoryFilter, mode: 'insensitive' };
-      }
+      if (periodFilter) where.period = periodFilter;
 
       const rows = await prisma.financeSnapshot.findMany({
         where,
-        orderBy: [{ period: 'desc' }, { category: 'asc' }],
-        take: 1000,
+        orderBy: [{ period: 'desc' }, { sourceId: 'asc' }],
+        take: limit,
       });
 
       return {
         query_type: queryType,
-        tabs_queried: [tab],
         record_count: rows.length,
         records: rows.map((r) => ({
-          category: r.category,
-          subcategory: r.subcategory,
-          amount: r.amount,
+          source_id: r.sourceId,
+          tab_name: r.tabName,
           period: r.period,
-          fund_or_phase: r.fundOrPhase,
-          source: r.source,
           row_data: r.rowData,
         })),
         sources: ['google_sheets'],

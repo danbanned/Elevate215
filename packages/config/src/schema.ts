@@ -34,8 +34,11 @@ export const envSchema = z.object({
   GOOGLE_SHEETS_STUDENT_COMPETENCY: optional,
   GOOGLE_SHEETS_DEVELOPMENT_CRM: optional,
   GOOGLE_SHEETS_ATTENDANCE_COHORT_1: optional,
+  GOOGLE_SHEETS_ATTENDANCE_COHORT_1_101: optional,
+  GOOGLE_SHEETS_ATTENDANCE_COHORT_1_LIFTOFF: optional,
   GOOGLE_SHEETS_ATTENDANCE_COHORT_2: optional,
   GOOGLE_SHEETS_ATTENDANCE_COHORT_3: optional,
+  GOOGLE_SHEETS_FINANCE_WORKBOOK: optional,
 
   BIGQUERY_PROJECT_ID: z.string().trim().min(1).default('lp-internal-ai'),
   BIGQUERY_DATASET: optional,
@@ -47,6 +50,9 @@ export const envSchema = z.object({
   SLACK_SIGNING_SECRET: optional,
   ROAM_API_KEY: optional,
   ROAM_GRAPH_NAME: optional,
+
+  NOTION_API_KEY: optional,
+  NOTION_MEETING_TRANSCRIPTS_DB_ID: optional,
 
   AUTH_SECRET: optional,
   AUTH_GOOGLE_ID: optional,

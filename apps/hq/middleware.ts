@@ -8,6 +8,9 @@ export default auth((req) => {
   if (PUBLIC_PATHS.some((p) => path.startsWith(p))) {
     return NextResponse.next();
   }
+  if (process.env.HQ_DEV_NO_AUTH === 'true') {
+    return NextResponse.next();
+  }
   if (!req.auth) {
     const url = req.nextUrl.clone();
     url.pathname = '/auth/signin';

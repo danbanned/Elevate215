@@ -14,7 +14,7 @@ The server currently exposes **13 tools**, all active in V0.1 — backed by Goog
 - `query_finances` — Launchpad Dashboard, Phase Budget Dashboard (incl. monthly LiftOff/HS), Phase Actuals 2025 + Q3 2026, Rapid + PEX stipends, **and Building21 Development CRM** (giving history, prospect pipeline, denied, Launchpad pipeline, grants tracker, contacts)
 - `query_donors` *(new)* — Building21 Development CRM donor lookup (list / profile / summary). Profile mode joins one donor's record to their gift history, pipeline, Launchpad-specific asks, and grants
 - `query_attendance` *(new — sheet-backed)* — three Launchpad cohort attendance sheets unified into `attendance_records`. By-student rates, aggregate breakdowns, raw event drill-downs. Will transition from sheets to BigQuery in V0.2 when the BigQuery connector ships
-- `search_conversations` — Drive documents only (Slack + meeting transcripts deferred to V0.2)
+- `search_conversations` — Drive documents only (Slack + Notion meeting transcripts deferred to V0.2)
 - `search_by_person` — document search scoped to a student or staff name
 - `get_entity_brief` — student profile + phase progression + certifications + recent Drive mentions; **also surfaces donor profile + giving history + pipeline + grants** when the named person matches a donor
 - `get_finance_brief` — partial; omits Aplos sections (V0.2)
@@ -22,7 +22,7 @@ The server currently exposes **13 tools**, all active in V0.1 — backed by Goog
 **Deferred to V0.2:**
 - BigQuery-backed `query_attendance` (current sheet-based version replaces this until then)
 - Aplos integration in `get_finance_brief`
-- Slack and meeting transcripts in `search_conversations` / `search_by_person`
+- Slack and Notion meeting transcripts in `search_conversations` / `search_by_person`
 - Vector search (Voyage embeddings + Pinecone)
 
 Composite tools (`get_entity_brief`, `get_finance_brief`) MUST gracefully omit sections whose underlying data source is not yet active, rather than erroring. Each section in the response should be optional and the tool should annotate which sources contributed.
@@ -241,10 +241,10 @@ Retrieve a student's structured profile.
 
 ### `search_conversations`
 
-Semantic search across Slack messages and meeting transcripts.
+Semantic search across Slack messages and Notion meeting transcripts.
 
 **Description shown to Claude:**
-> Search Slack messages and meeting transcripts for content relevant to a query. Returns the most semantically similar passages. Use this tool when asked about team discussions, decisions, or anything said in Slack or meetings.
+> Search Slack messages and Notion meeting transcripts for content relevant to a query. Returns the most semantically similar passages. Use this tool when asked about team discussions, decisions, or anything said in Slack or meetings.
 
 **Input Schema:**
 ```json
@@ -257,7 +257,7 @@ Semantic search across Slack messages and meeting transcripts.
     },
     "sources": {
       "type": "array",
-      "items": { "type": "string", "enum": ["slack", "meeting_transcripts"] },
+      "items": { "type": "string", "enum": ["slack", "notion"] },
       "description": "Optional: limit to specific source(s). Searches both by default."
     },
     "top_k": {
@@ -296,7 +296,7 @@ Only results with `score >= 0.75` are returned.
 Cross-source semantic search scoped to a specific student or staff member.
 
 **Description shown to Claude:**
-> Search all conversations (Slack and meeting transcripts) for content about or involving a specific person. Resolves the person's identity across sources before searching. Use this tool when you want to find everything that's been said about a particular student or staff member.
+> Search all conversations (Slack and Notion meeting transcripts) for content about or involving a specific person. Resolves the person's identity across sources before searching. Use this tool when you want to find everything that's been said about a particular student or staff member.
 
 **Input Schema:**
 ```json
@@ -366,7 +366,7 @@ Return a full summary card for a person — student profile + phase progression 
   "donor_grants": [],
   "recent_mentions": [ /* top 5 from search_by_person */ ],
   "sources_active": ["google_sheets", "google_drive"],
-  "sources_deferred": ["bigquery_attendance", "slack", "meeting_transcripts"]
+  "sources_deferred": ["bigquery_attendance", "slack", "notion"]
 }
 ```
 

@@ -8,36 +8,20 @@ import { runTool } from '../tool-helpers.js';
 const NAME = 'query_attendance';
 
 const DESCRIPTION =
-  'Query Launchpad student attendance from the three cohort sheets (Cohort 1 / 2 / 3). Use for per-student attendance rates, aggregate rates by phase / race / cohort / school / etc., or raw event drill-downs over a date range. Cohorts are loose Launchpad groupings (students may move between them as they accelerate); rates blend cohort 1 (already-aggregated weekly %), cohort 2 (daily P/A/E codes), and cohort 3 (weekly check-in/out logs with codes). Excused absences are excluded from rate calculations.';
+  'Query Launchpad student attendance from the three cohort sheets (Cohort 1 / 2 / 3). Use for per-student attendance rates, aggregate rates by phase / race / cohort / school / etc., or raw event drill-downs over a date range. Cohorts are loose Launchpad groupings; rates blend cohort 1 (already-aggregated weekly %), cohort 2 (daily P/A/E codes), and cohort 3 (weekly check-in/out logs with codes). Excused absences are excluded from rate calculations.';
 
 const inputSchema = {
   query_type: z.enum(['by_student', 'aggregate', 'events']),
   student_number: z
     .string()
     .optional()
-    .describe('LP#### (joins students.student_id).'),
-  cohort: z
-    .number()
-    .optional()
-    .describe('Restrict to one cohort (1, 2, or 3). Default: all three.'),
+    .describe('LP#### (joins students.student_number).'),
+  cohort: z.number().optional().describe('1, 2, or 3.'),
   current_phase: z.string().optional(),
-  race: z.string().optional(),
-  gender: z.string().optional(),
-  school: z.string().optional().describe('Partial match.'),
-  enrollment_status: z.string().optional(),
-  graduation_year: z.number().optional(),
   start_date: z.string().optional(),
   end_date: z.string().optional(),
   group_by: z
-    .enum([
-      'cohort',
-      'current_phase',
-      'race',
-      'gender',
-      'school',
-      'enrollment_status',
-      'graduation_year',
-    ])
+    .enum(['cohort', 'current_phase', 'enrollment_status', 'overall'])
     .optional(),
   limit: z.number().optional(),
 };
@@ -47,28 +31,17 @@ function buildWhere(input: Record<string, unknown>): Prisma.AttendanceRecordWher
   const studentNumber =
     typeof input['student_number'] === 'string' ? input['student_number'] : undefined;
   const cohort = typeof input['cohort'] === 'number' ? input['cohort'] : undefined;
-  const currentPhase =
-    typeof input['current_phase'] === 'string' ? input['current_phase'] : undefined;
-  const enrollmentStatus =
-    typeof input['enrollment_status'] === 'string'
-      ? input['enrollment_status']
-      : undefined;
   const startDate =
     typeof input['start_date'] === 'string' ? input['start_date'] : undefined;
   const endDate =
     typeof input['end_date'] === 'string' ? input['end_date'] : undefined;
 
-  const studentFilter: Prisma.StudentWhereInput = {};
-  if (studentNumber) studentFilter.studentNumber = studentNumber;
-  if (currentPhase) studentFilter.currentPhase = currentPhase;
-  if (enrollmentStatus) studentFilter.enrollmentStatus = enrollmentStatus;
-  if (Object.keys(studentFilter).length > 0) where.student = studentFilter;
-
-  if (cohort !== undefined) where.cohort = String(cohort);
+  if (studentNumber) where.studentNumber = studentNumber;
+  if (cohort !== undefined) where.cohort = cohort;
   if (startDate || endDate) {
-    where.attendanceDate = {};
-    if (startDate) where.attendanceDate.gte = startDate;
-    if (endDate) where.attendanceDate.lte = endDate;
+    where.date = {};
+    if (startDate) where.date.gte = new Date(startDate);
+    if (endDate) where.date.lte = new Date(endDate);
   }
   return where;
 }
@@ -87,11 +60,11 @@ function emptyTotals(): AttendanceTotals {
 
 function addRow(
   totals: AttendanceTotals,
-  cohort: string,
+  cohort: number,
   code: string | null,
   percentage: number | null,
 ): void {
-  if (cohort === '1' && percentage !== null) {
+  if (cohort === 1 && percentage !== null) {
     totals.cohort1Sum += percentage;
     totals.cohort1Count += 1;
     return;
@@ -129,19 +102,11 @@ export function registerQueryAttendance(server: McpServer): void {
           prisma.attendanceRecord.count({ where }),
           prisma.attendanceRecord.findMany({
             where,
-            include: {
-              student: {
-                select: {
-                  canonicalName: true,
-                  studentNumber: true,
-                  currentPhase: true,
-                },
-              },
-            },
-            orderBy: [{ attendanceDate: 'desc' }],
+            orderBy: [{ date: 'desc' }],
             take: limit,
           }),
         ]);
+        const students = await loadStudents(rows.map((r) => r.studentNumber));
         return {
           query_type: 'events',
           total_rows_matched: totalMatched,
@@ -149,11 +114,11 @@ export function registerQueryAttendance(server: McpServer): void {
           truncated: rows.length < totalMatched,
           records: rows.map((r) => ({
             id: r.id,
-            cohort: Number(r.cohort),
-            student_number: r.student.studentNumber,
-            student_name: r.student.canonicalName,
-            current_phase: r.student.currentPhase,
-            date: r.attendanceDate,
+            cohort: r.cohort,
+            student_number: r.studentNumber,
+            student_name: students.get(r.studentNumber)?.canonicalName ?? null,
+            current_phase: students.get(r.studentNumber)?.currentPhase ?? null,
+            date: r.date,
             code: r.code,
             percentage: r.percentage,
             row_data: r.rowData,
@@ -164,56 +129,39 @@ export function registerQueryAttendance(server: McpServer): void {
       const rows = await prisma.attendanceRecord.findMany({
         where,
         select: {
-          studentId: true,
           cohort: true,
           code: true,
           percentage: true,
-          student: {
-            select: {
-              canonicalName: true,
-              studentNumber: true,
-              currentPhase: true,
-              cohort: true,
-              enrollmentStatus: true,
-            },
-          },
+          studentNumber: true,
         },
       });
+      const students = await loadStudents(rows.map((r) => r.studentNumber));
 
       if (queryType === 'by_student') {
-        type StudentRow = (typeof rows)[number]['student'];
         const perStudent = new Map<
           string,
-          {
-            totals: AttendanceTotals;
-            cohorts: Set<number>;
-            student: StudentRow;
-          }
+          { totals: AttendanceTotals; cohorts: Set<number> }
         >();
         for (const r of rows) {
-          let entry = perStudent.get(r.studentId);
+          let entry = perStudent.get(r.studentNumber);
           if (!entry) {
-            entry = { totals: emptyTotals(), cohorts: new Set(), student: r.student };
-            perStudent.set(r.studentId, entry);
+            entry = { totals: emptyTotals(), cohorts: new Set() };
+            perStudent.set(r.studentNumber, entry);
           }
-          addRow(entry.totals, r.cohort, r.code, r.percentage);
-          const n = Number(r.cohort);
-          if (Number.isFinite(n)) entry.cohorts.add(n);
+          addRow(entry.totals, r.cohort, r.code, r.percentage ? Number(r.percentage) : null);
+          entry.cohorts.add(r.cohort);
         }
         return {
           query_type: 'by_student',
           total_students: perStudent.size,
-          students: Array.from(perStudent.values()).map((e) => ({
-            student_number: e.student.studentNumber,
-            canonical_name: e.student.canonicalName,
-            current_phase: e.student.currentPhase,
+          students: Array.from(perStudent.entries()).map(([sn, e]) => ({
+            student_number: sn,
+            canonical_name: students.get(sn)?.canonicalName ?? null,
+            current_phase: students.get(sn)?.currentPhase ?? null,
             cohorts: Array.from(e.cohorts).sort(),
             attendance_rate_pct: rate(e.totals),
             rows_counted:
-              e.totals.present +
-              e.totals.absent +
-              e.totals.excused +
-              e.totals.cohort1Count,
+              e.totals.present + e.totals.absent + e.totals.excused + e.totals.cohort1Count,
             present: e.totals.present,
             absent: e.totals.absent,
             excused: e.totals.excused,
@@ -222,33 +170,31 @@ export function registerQueryAttendance(server: McpServer): void {
       }
 
       const groupBy = String(raw['group_by'] ?? 'cohort');
-      const groups = new Map<
-        string,
-        { totals: AttendanceTotals; students: Set<string> }
-      >();
+      const groups = new Map<string, { totals: AttendanceTotals; students: Set<string> }>();
       for (const r of rows) {
+        const student = students.get(r.studentNumber);
         const key =
           groupBy === 'cohort'
             ? `cohort_${r.cohort}`
             : groupBy === 'current_phase'
-              ? (r.student.currentPhase ?? 'unknown')
+              ? (student?.currentPhase ?? 'unknown')
               : groupBy === 'enrollment_status'
-                ? (r.student.enrollmentStatus ?? 'unknown')
+                ? (student?.enrollmentStatus ?? 'unknown')
                 : 'overall';
         let entry = groups.get(key);
         if (!entry) {
           entry = { totals: emptyTotals(), students: new Set() };
           groups.set(key, entry);
         }
-        addRow(entry.totals, r.cohort, r.code, r.percentage);
-        entry.students.add(r.studentId);
+        addRow(entry.totals, r.cohort, r.code, r.percentage ? Number(r.percentage) : null);
+        entry.students.add(r.studentNumber);
       }
 
       const overallTotals = emptyTotals();
       const overallStudents = new Set<string>();
       for (const r of rows) {
-        addRow(overallTotals, r.cohort, r.code, r.percentage);
-        overallStudents.add(r.studentId);
+        addRow(overallTotals, r.cohort, r.code, r.percentage ? Number(r.percentage) : null);
+        overallStudents.add(r.studentNumber);
       }
 
       return {
@@ -268,10 +214,7 @@ export function registerQueryAttendance(server: McpServer): void {
           student_count: e.students.size,
           attendance_rate_pct: rate(e.totals),
           rows_counted:
-            e.totals.present +
-            e.totals.absent +
-            e.totals.excused +
-            e.totals.cohort1Count,
+            e.totals.present + e.totals.absent + e.totals.excused + e.totals.cohort1Count,
           present: e.totals.present,
           absent: e.totals.absent,
           excused: e.totals.excused,
@@ -279,4 +222,31 @@ export function registerQueryAttendance(server: McpServer): void {
       };
     }),
   );
+}
+
+async function loadStudents(
+  numbers: string[],
+): Promise<Map<string, { canonicalName: string; currentPhase: string | null; enrollmentStatus: string | null }>> {
+  if (numbers.length === 0) return new Map();
+  const uniq = [...new Set(numbers)];
+  const students = await prisma.student.findMany({
+    where: { studentNumber: { in: uniq } },
+    select: {
+      studentNumber: true,
+      canonicalName: true,
+      currentPhase: true,
+      enrollmentStatus: true,
+    },
+  });
+  const map = new Map<string, { canonicalName: string; currentPhase: string | null; enrollmentStatus: string | null }>();
+  for (const s of students) {
+    if (s.studentNumber) {
+      map.set(s.studentNumber, {
+        canonicalName: s.canonicalName,
+        currentPhase: s.currentPhase,
+        enrollmentStatus: s.enrollmentStatus,
+      });
+    }
+  }
+  return map;
 }

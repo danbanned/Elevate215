@@ -15,6 +15,9 @@ export async function Nav(): Promise<JSX.Element> {
             <Link href="/" className="hover:text-ink">
               Home
             </Link>
+            <Link href="/dashboard" className="hover:text-ink">
+              Dashboard
+            </Link>
             <Link href="/sync" className="hover:text-ink">
               Sync
             </Link>

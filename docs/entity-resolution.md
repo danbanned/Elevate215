@@ -10,7 +10,7 @@ The same person appears differently across every data source:
 | BigQuery (Beacon) | Student ID `S1042` |
 | Google Drive | `Maria G.`, `Maria Garcia`, student ID in a column |
 | Slack | `@maria.g`, display name `Maria 🌟` |
-| Meeting transcripts | `Maria`, `Maria Garcia`, `the student we discussed` |
+| Notion (meeting transcripts) | `Maria`, `Maria Garcia`, `the student we discussed` |
 
 Without resolution, MCP tools can't answer "What's Maria's attendance?" when given a Slack handle — they don't know `@maria.g` maps to student ID `S1042`.
 

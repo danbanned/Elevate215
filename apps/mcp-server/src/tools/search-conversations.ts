@@ -9,14 +9,14 @@ import { toolError } from '../errors.js';
 const NAME = 'search_conversations';
 
 const DESCRIPTION =
-  'Search Slack messages and meeting transcripts for content relevant to a query. Returns the most semantically similar passages. Use this tool when asked about team discussions, decisions, or anything said in Slack or meetings.';
+  'Search Slack messages and Notion meeting transcripts for content relevant to a query. Returns the most semantically similar passages. Use this tool when asked about team discussions, decisions, or anything said in Slack or meetings.';
 
 const inputSchema = {
   query: z.string().describe('Natural language search query.'),
   sources: z
-    .array(z.enum(['slack', 'meeting_transcripts']))
+    .array(z.enum(['slack', 'notion']))
     .optional()
-    .describe('Optional: limit to specific source(s). Searches both by default.'),
+    .describe('Optional: limit to specific source(s). Searches both by default. Use "notion" for meeting transcripts.'),
   top_k: z
     .number()
     .int()
@@ -47,7 +47,7 @@ export function registerSearchConversations(server: McpServer): void {
       const sourcesRaw = Array.isArray(raw['sources']) ? raw['sources'] : undefined;
       const sources = sourcesRaw?.filter(
         (s): s is string => typeof s === 'string',
-      ) ?? ['slack', 'meeting_transcripts'];
+      ) ?? ['slack', 'notion'];
       const topK = Math.min(
         typeof raw['top_k'] === 'number' ? (raw['top_k'] as number) : 8,
         20,

@@ -36,13 +36,13 @@ export function registerQueryCertifications(server: McpServer): void {
         typeof raw['end_date'] === 'string' ? (raw['end_date'] as string) : undefined;
 
       const where: Prisma.StudentCertificationWhereInput = {};
-      if (typeFilter) where.certName = { contains: typeFilter, mode: 'insensitive' };
+      if (typeFilter) where.type = { contains: typeFilter, mode: 'insensitive' };
       if (phaseFilter) where.phase = phaseFilter;
       if (resultFilter) where.result = resultFilter;
       if (startDate || endDate) {
-        where.issuedDate = {};
-        if (startDate) where.issuedDate.gte = startDate;
-        if (endDate) where.issuedDate.lte = endDate;
+        where.date = {};
+        if (startDate) where.date.gte = startDate;
+        if (endDate) where.date.lte = endDate;
       }
 
       switch (queryType) {
@@ -52,18 +52,18 @@ export function registerQueryCertifications(server: McpServer): void {
             include: {
               student: { select: { canonicalName: true, studentNumber: true } },
             },
-            orderBy: [{ issuedDate: 'desc' }],
+            orderBy: [{ date: 'desc' }],
             take: 500,
           });
           return {
             query_type: 'scores',
             record_count: rows.length,
             records: rows.map((r) => ({
-              cert_name: r.certName,
+              type: r.type,
               phase: r.phase,
               result: r.result,
               score: r.score,
-              issued_date: r.issuedDate,
+              date: r.date,
               student_name: r.student.canonicalName,
               student_number: r.student.studentNumber,
             })),
@@ -71,7 +71,7 @@ export function registerQueryCertifications(server: McpServer): void {
         }
         case 'by_type': {
           const grouped = await prisma.studentCertification.groupBy({
-            by: ['certName'],
+            by: ['type'],
             where,
             _count: { _all: true },
             _avg: { score: true },
@@ -79,9 +79,9 @@ export function registerQueryCertifications(server: McpServer): void {
           return {
             query_type: 'by_type',
             breakdown: grouped.map((g) => ({
-              cert_name: g.certName,
-              count: g._count._all,
-              avg_score: g._avg.score,
+              type: g.type,
+              count: g._count?._all ?? 0,
+              avg_score: g._avg?.score ?? null,
             })),
           };
         }
@@ -95,7 +95,7 @@ export function registerQueryCertifications(server: McpServer): void {
             query_type: 'by_phase',
             breakdown: grouped.map((g) => ({
               phase: g.phase,
-              count: g._count._all,
+              count: g._count?._all ?? 0,
             })),
           };
         }
@@ -109,7 +109,7 @@ export function registerQueryCertifications(server: McpServer): void {
             query_type: 'by_result',
             breakdown: grouped.map((g) => ({
               result: g.result,
-              count: g._count._all,
+              count: g._count?._all ?? 0,
             })),
           };
         }

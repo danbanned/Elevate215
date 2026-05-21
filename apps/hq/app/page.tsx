@@ -10,25 +10,27 @@ interface SourceFreshness {
 }
 
 async function fetchFreshness(): Promise<SourceFreshness[]> {
-  const [students, info, certifications, competencies, attendance, finance, donors, chunks] =
+  const [students, info, certifications, competencies, attendance, finance, donors, chunks, outcomes] =
     await Promise.all([
       latest('students', 'updated_at'),
       latest('student_info', 'synced_at'),
-      latest('student_certifications', 'synced_at'),
-      latest('student_competencies', 'synced_at'),
-      latest('attendance_records', 'synced_at'),
-      latest('finance_snapshots', 'synced_at'),
+      latest('student_certifications', 'last_synced_at'),
+      latest('student_competencies', 'last_synced_at'),
+      latest('attendance_records', 'last_synced_at'),
+      latest('finance_snapshots', 'last_synced_at'),
       latest('donor_contacts', 'synced_at'),
       latest('document_chunks', 'synced_at'),
+      latest('student_phase_outcomes', 'last_synced_at'),
     ]);
 
   return [
     { source: 'Students roster', table: 'students', ...students },
-    { source: 'Drive student notes', table: 'student_info', ...info },
+    { source: 'Phase outcomes', table: 'student_phase_outcomes', ...outcomes },
     { source: 'Certifications (PCEP)', table: 'student_certifications', ...certifications },
     { source: 'Competencies', table: 'student_competencies', ...competencies },
     { source: 'Attendance', table: 'attendance_records', ...attendance },
     { source: 'Finance (Sheets)', table: 'finance_snapshots', ...finance },
+    { source: 'Drive student notes', table: 'student_info', ...info },
     { source: 'Donors (B21 CRM)', table: 'donor_contacts', ...donors },
     { source: 'Vector chunks', table: 'document_chunks', ...chunks },
   ];

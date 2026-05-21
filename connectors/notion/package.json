@@ -1,0 +1,23 @@
+{
+  "name": "@lp-ai/connector-notion",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "sync": "node dist/cli.js",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lp-ai/config": "workspace:*",
+    "@lp-ai/db": "workspace:*",
+    "@lp-ai/embedding": "workspace:*",
+    "dotenv": "^16.4.5",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}

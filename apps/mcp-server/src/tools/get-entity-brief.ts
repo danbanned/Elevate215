@@ -8,10 +8,10 @@ import { toolError } from '../errors.js';
 const NAME = 'get_entity_brief';
 
 const DESCRIPTION =
-  'Get a comprehensive brief on a student: profile, phase progression, certifications, and recent Drive document mentions. Also surfaces donor information (giving history, pipeline, grants) when the named person matches a Development CRM donor. Use this as a starting point when asked to summarize or give an overview of a person.';
+  'Get a comprehensive brief on a student: profile, phase progression, certifications, and recent Drive document mentions. Also surfaces donor information when the named person matches a Development CRM donor.';
 
 const SOURCES_ACTIVE = ['google_sheets', 'google_drive'] as const;
-const SOURCES_DEFERRED = ['bigquery_attendance', 'slack', 'meeting_transcripts'] as const;
+const SOURCES_DEFERRED = ['bigquery_attendance', 'slack', 'notion'] as const;
 
 const inputSchema = {
   person_name: z
@@ -56,14 +56,11 @@ export function registerGetEntityBrief(server: McpServer): void {
 
       if (resolved?.student) {
         const student = resolved.student;
-        const [phaseOutcomes, certifications, aliases, info] = await Promise.all([
-          prisma.studentPhaseOutcome.findMany({
-            where: { studentId: student.id },
-            orderBy: { startDate: 'asc' },
-          }),
+        const [phaseOutcome, certifications, aliases, info] = await Promise.all([
+          prisma.studentPhaseOutcome.findUnique({ where: { studentId: student.id } }),
           prisma.studentCertification.findMany({
             where: { studentId: student.id },
-            orderBy: { issuedDate: 'desc' },
+            orderBy: { date: 'desc' },
           }),
           getAliases(student.id),
           prisma.studentInfo.findMany({
@@ -93,19 +90,20 @@ export function registerGetEntityBrief(server: McpServer): void {
           alias: a.alias,
           confidence: a.confidence,
         }));
-        result['phase_progression'] = phaseOutcomes.map((p) => ({
-          phase: p.phase,
-          outcome: p.outcome,
-          exit_reason: p.exitReason,
-          start_date: p.startDate,
-          end_date: p.endDate,
-        }));
+        result['phase_progression'] = phaseOutcome
+          ? [
+              { phase: 'Foundations', status: phaseOutcome.foundationsStatus, start_date: phaseOutcome.foundationsStartDate, end_date: phaseOutcome.foundationsEndDate },
+              { phase: '101', status: phaseOutcome.phase101Status, start_date: phaseOutcome.phase101StartDate, end_date: phaseOutcome.phase101EndDate },
+              { phase: 'Lightspeed', status: phaseOutcome.lightspeedStatus, start_date: phaseOutcome.lightspeedStartDate, end_date: phaseOutcome.lightspeedEndDate },
+              { phase: 'LiftOff', status: phaseOutcome.liftoffStatus, start_date: phaseOutcome.liftoffStartDate, end_date: phaseOutcome.liftoffEndDate },
+            ].filter((p) => p.status !== null || p.start_date !== null)
+          : [];
         result['certifications'] = certifications.map((c) => ({
-          cert_name: c.certName,
+          type: c.type,
           phase: c.phase,
           result: c.result,
           score: c.score,
-          issued_date: c.issuedDate,
+          date: c.date,
         }));
         result['drive_notes_excerpt'] = info[0]?.content.slice(0, 1000) ?? null;
         result['entity_confidence'] = resolved.confidence;

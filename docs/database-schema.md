@@ -170,7 +170,7 @@ One row per connector sync run. Used by HQ dashboard.
 ```sql
 CREATE TABLE sync_log (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  connector       TEXT NOT NULL,          -- 'bigquery', 'google-drive', 'slack', 'meeting-transcripts'
+  connector       TEXT NOT NULL,          -- 'bigquery', 'google-drive', 'google-sheets', 'slack', 'notion', 'aplos', 'givebutter', 'roam'
   started_at      TIMESTAMPTZ NOT NULL,
   finished_at     TIMESTAMPTZ,
   status          TEXT NOT NULL CHECK (status IN ('running', 'success', 'error')),

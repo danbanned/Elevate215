@@ -6,13 +6,14 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "sync": "node --env-file=../../.env dist/cli.js",
+    "sync": "node --security-revert=CVE-2023-46809 dist/cli.js",
     "build": "tsc",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@lp-ai/config": "workspace:*",
     "@lp-ai/db": "workspace:*",
+    "dotenv": "^16.4.5",
     "zod": "^3.23.0"
   },
   "devDependencies": {

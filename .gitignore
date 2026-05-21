@@ -13,6 +13,14 @@ out/
 .env.local
 .env.*.local
 
+# Credentials (defense-in-depth — raw credential files should live outside the repo)
+*service-account*.json
+*credentials*.json
+*-key.json
+*.pem
+# Google service account default naming: <project-id>-<hex>.json
+/lp-internal-ai-*.json
+
 # AWS
 .aws/
 

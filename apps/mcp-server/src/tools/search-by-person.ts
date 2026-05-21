@@ -9,7 +9,7 @@ import { toolError } from '../errors.js';
 const NAME = 'search_by_person';
 
 const DESCRIPTION =
-  "Search all conversations (Slack and meeting transcripts) for content about or involving a specific person. Resolves the person's identity across sources before searching. Use this tool when you want to find everything that's been said about a particular student or staff member.";
+  "Search all conversations (Slack and Notion meeting transcripts) for content about or involving a specific person. Resolves the person's identity across sources before searching. Use this tool when you want to find everything that's been said about a particular student or staff member.";
 
 const inputSchema = {
   person_name: z

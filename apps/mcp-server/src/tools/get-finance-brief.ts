@@ -7,7 +7,7 @@ import { runTool } from '../tool-helpers.js';
 const NAME = 'get_finance_brief';
 
 const DESCRIPTION =
-  'Get a high-level financial overview of the organization: fund balances, year-to-date income and expenses, active fundraising campaigns, and recent Aplos transactions. Use this as a starting point for any general finance question or when asked for a financial summary.';
+  'Get a high-level financial overview of the organization: fund balances and recent donor gifts. Use this as a starting point for any general finance question.';
 
 const inputSchema = {
   period: z
@@ -25,7 +25,7 @@ export function registerGetFinanceBrief(server: McpServer): void {
 
       const [fundBalances, recentGifts] = await Promise.all([
         prisma.financeSnapshot.findMany({
-          where: { tab: 'fund_balances' },
+          where: { tabName: 'fund_balances' },
           orderBy: { period: 'desc' },
           take: 50,
         }),
@@ -39,11 +39,9 @@ export function registerGetFinanceBrief(server: McpServer): void {
       return {
         period,
         fund_balances: fundBalances.map((f) => ({
-          fund: f.fundOrPhase,
-          category: f.category,
-          subcategory: f.subcategory,
-          amount: f.amount,
+          source_id: f.sourceId,
           period: f.period,
+          row_data: f.rowData,
         })),
         recent_gifts: recentGifts.map((g) => ({
           amount: g.amount,
