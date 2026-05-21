@@ -1,0 +1,61 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PullAppImagesFromECR",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:GetAuthorizationToken",
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchGetImage",
+        "ecr:DescribeImages",
+        "ecr:DescribeRepositories"
+      ],
+      "Resource": [
+        "arn:aws:ecr:us-east-1:${AWS_ACCOUNT_ID}:repository/lp-internal/hq",
+        "arn:aws:ecr:us-east-1:${AWS_ACCOUNT_ID}:repository/lp-internal/mcp-server"
+      ]
+    },
+    {
+      "Sid": "ECRAuthTokenIsAccountWide",
+      "Effect": "Allow",
+      "Action": "ecr:GetAuthorizationToken",
+      "Resource": "*"
+    },
+    {
+      "Sid": "ReadAppSecrets",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret"
+      ],
+      "Resource": "arn:aws:secretsmanager:us-east-1:${AWS_ACCOUNT_ID}:secret:lp-internal/*"
+    },
+    {
+      "Sid": "DecryptSecretsViaSecretsManager",
+      "Effect": "Allow",
+      "Action": "kms:Decrypt",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "kms:ViaService": "secretsmanager.us-east-1.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "WriteApplicationLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:DescribeLogStreams"
+      ],
+      "Resource": [
+        "arn:aws:logs:us-east-1:${AWS_ACCOUNT_ID}:log-group:/aws/apprunner/lp-hq:*",
+        "arn:aws:logs:us-east-1:${AWS_ACCOUNT_ID}:log-group:/aws/apprunner/lp-mcp-server:*",
+        "arn:aws:logs:us-east-1:${AWS_ACCOUNT_ID}:log-group:/lp-internal/app:*"
+      ]
+    }
+  ]
+}
