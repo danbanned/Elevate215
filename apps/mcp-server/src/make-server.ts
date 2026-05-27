@@ -9,6 +9,7 @@ import { registerQueryCompetency } from './tools/query-competency.js';
 import { registerQueryFinances } from './tools/query-finances.js';
 import { registerQueryDonors } from './tools/query-donors.js';
 import { registerQueryAttendance } from './tools/query-attendance.js';
+import { registerQueryEmployment } from './tools/query-employment.js';
 import { registerSearchConversations } from './tools/search-conversations.js';
 import { registerSearchByPerson } from './tools/search-by-person.js';
 import { registerGetEntityBrief } from './tools/get-entity-brief.js';
@@ -30,6 +31,7 @@ export function makeServer(): McpServer {
   registerQueryFinances(server);
   registerQueryDonors(server);
   registerQueryAttendance(server);
+  registerQueryEmployment(server);
   registerSearchConversations(server);
   registerSearchByPerson(server);
   registerGetEntityBrief(server);

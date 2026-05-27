@@ -7,7 +7,7 @@ interface SeedStudent {
   email: string;
   currentPhase: string;
   enrollmentStatus: string;
-  cohort: string;
+  cohort: number;
   neighborhood: string;
   aliases: Array<{ alias: string; source: string }>;
 }
@@ -19,7 +19,7 @@ const STUDENTS: SeedStudent[] = [
     email: 'maria.garcia@example.org',
     currentPhase: '101',
     enrollmentStatus: 'E',
-    cohort: '2',
+    cohort: 2,
     neighborhood: 'Kensington',
     aliases: [
       { alias: 'Maria Garcia', source: 'drive' },
@@ -34,7 +34,7 @@ const STUDENTS: SeedStudent[] = [
     email: 'tai.pham@example.org',
     currentPhase: 'Foundations',
     enrollmentStatus: 'E',
-    cohort: '3',
+    cohort: 3,
     neighborhood: 'Olney',
     aliases: [
       { alias: 'Tai Pham', source: 'drive' },
@@ -48,7 +48,7 @@ const STUDENTS: SeedStudent[] = [
     email: 'janelle.brooks@example.org',
     currentPhase: 'LiftOff',
     enrollmentStatus: 'E',
-    cohort: '1',
+    cohort: 1,
     neighborhood: 'West Philly',
     aliases: [
       { alias: 'Janelle Brooks', source: 'drive' },

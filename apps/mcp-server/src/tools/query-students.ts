@@ -49,8 +49,13 @@ export function registerQueryStudents(server: McpServer): void {
         typeof raw['current_phase'] === 'string'
           ? (raw['current_phase'] as string)
           : undefined;
-      const cohort =
-        typeof raw['cohort'] === 'string' ? (raw['cohort'] as string) : undefined;
+      const cohortRaw = raw['cohort'];
+      const cohort: number | undefined =
+        typeof cohortRaw === 'number'
+          ? cohortRaw
+          : typeof cohortRaw === 'string' && cohortRaw.trim() !== '' && !isNaN(Number(cohortRaw))
+            ? Number(cohortRaw)
+            : undefined;
       const filterField =
         typeof raw['filter_field'] === 'string'
           ? (raw['filter_field'] as string)

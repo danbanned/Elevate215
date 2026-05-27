@@ -1,16 +1,27 @@
 import { prisma } from '@lp-ai/db';
 import { getSheetRows } from './sheets-client.js';
 import {
-  EXPECTED_STUDENTS_HEADERS,
-  parseStudentRow,
+  EXPECTED_STUDENTS_V2_HEADERS,
+  parseStudentV2Row,
   parseCertificationRow,
   parseOutcomesRow,
 } from './parse.js';
 import { HeaderMismatchError } from './errors.js';
 
+// ---------------------------------------------------------------------------
+// Source-of-truth split as of 2026-05:
+//   - Students + PhaseCompletion → V2 sheet (env: GOOGLE_SHEETS_STUDENT_INFO_V2)
+//   - Certifications → legacy sheet (env: GOOGLE_SHEETS_STUDENT_INFO_ID)
+//
+// `students` rows are upserted by student_number (LP####). Rows in the DB that
+// don't appear in the new sheet are NOT deleted — this preserves the FK web
+// (phase outcomes, certifications, attendance, etc.); those students just
+// stop receiving fresh updates.
+// ---------------------------------------------------------------------------
+
 function checkHeaders(live: string[]): void {
-  for (let i = 0; i < EXPECTED_STUDENTS_HEADERS.length; i++) {
-    const expected = EXPECTED_STUDENTS_HEADERS[i]?.trim() ?? '';
+  for (let i = 0; i < EXPECTED_STUDENTS_V2_HEADERS.length; i++) {
+    const expected = EXPECTED_STUDENTS_V2_HEADERS[i]?.trim() ?? '';
     const actual = live[i]?.trim() ?? '';
     if (expected !== actual) {
       throw new HeaderMismatchError(
@@ -25,54 +36,67 @@ function toDate(yyyymmdd: string | null): Date | null {
 }
 
 export async function syncStudents(): Promise<number> {
-  const sheetId = process.env['GOOGLE_SHEETS_STUDENT_INFO_ID'];
-  if (!sheetId) throw new Error('GOOGLE_SHEETS_STUDENT_INFO_ID not set');
+  const sheetId = process.env['GOOGLE_SHEETS_STUDENT_INFO_V2'];
+  if (!sheetId) throw new Error('GOOGLE_SHEETS_STUDENT_INFO_V2 not set');
 
-  const headerRow = await getSheetRows(sheetId, 'Students!A1:AL1');
+  // V2 sheet has 52 columns A..AZ.
+  const headerRow = await getSheetRows(sheetId, 'Students!A1:AZ1');
   checkHeaders(headerRow[0] ?? []);
 
-  const dataRows = await getSheetRows(sheetId, 'Students!A2:AL');
+  const dataRows = await getSheetRows(sheetId, 'Students!A2:AZ');
   let synced = 0;
 
   for (const raw of dataRows) {
-    const parsed = parseStudentRow(raw);
-    if (!parsed) continue;
+    const s = parseStudentV2Row(raw);
+    if (!s) continue;
 
     const data = {
-      canonicalName: parsed.canonicalName,
-      enrollmentStatus: parsed.enrollmentStatus,
-      currentPhase: parsed.currentPhase,
-      launchpadEmail: parsed.launchpadEmail,
-      gender: parsed.gender,
-      raceEthnicity: parsed.raceEthnicity,
-      schoolName: parsed.schoolName,
-      hsGraduationYear: parsed.hsGraduationYear,
-      entryDate: toDate(parsed.entryDate),
-      withdrawalDate: toDate(parsed.withdrawalDate),
-      withdrawalCode: parsed.withdrawalCode,
-      city: parsed.city,
-      state: parsed.state,
-      zip: parsed.zip,
-      interviewScore: parsed.interviewScore,
-      techInterestOnboarding: parsed.techInterestOnboarding,
-      interviewPassionScore: parsed.interviewPassionScore,
-      interviewCollegeScore: parsed.interviewCollegeScore,
-      hsGpa: parsed.hsGpa,
-      algebra1Grade: parsed.algebra1Grade,
-      geometryGrade: parsed.geometryGrade,
-      collegeEnroll: parsed.collegeEnroll,
-      university: parsed.university,
-      major: parsed.major,
-      workforceProgramReferral: parsed.workforceProgramReferral,
-      workforceReferralStatus: parsed.workforceReferralStatus,
-      internshipStatus: parsed.internshipStatus,
-      income: parsed.income,
-      parentalEd: parsed.parentalEd,
+      canonicalName: s.canonicalName,
+      suffix: s.suffix,
+      enrollmentStatus: s.enrollmentStatus,
+      currentPhase: s.currentPhase,
+      dob: toDate(s.dob),
+      gender: s.gender,
+      raceEthnicity: s.raceEthnicity,
+      schoolName: s.schoolName,
+      hsGraduationYear: s.hsGraduationYear,
+      ell: s.ell,
+      entryDate: toDate(s.entryDate),
+      withdrawalDate: toDate(s.withdrawalDate),
+      withdrawalCode: s.withdrawalCode,
+      launchpadEmail: s.launchpadEmail,
+      altSchoolEmail: s.altSchoolEmail,
+      asuriteUserId: s.asuriteUserId,
+      rapidAccountNumber: s.rapidAccountNumber,
+      phone: s.phone,
+      altContact: s.altContact,
+      city: s.city,
+      state: s.state,
+      zip: s.zip,
+      idCardNumber: s.idCardNumber,
+      docFolderUrl: s.docFolderUrl,
+      tShirtSize: s.tShirtSize,
+      interviewScore: s.interviewScore,
+      algebraKeystoneScore: s.algebraKeystoneScore,
+      hsGpa: s.hsGpa,
+      algebra1Grade: s.algebra1Grade,
+      geometryGrade: s.geometryGrade,
+      worksOutsideLaunchpad: s.worksOutsideLaunchpad,
+      hoursOutsideCommitted: s.hoursOutsideCommitted,
+      permissionSlip: s.permissionSlip,
+      extraTime: s.extraTime,
+      cohort: s.cohort,
+      techInterestOnboarding: s.techInterestOnboarding,
+      interviewPassionScore: s.interviewPassionScore,
+      interviewCollegeScore: s.interviewCollegeScore,
+      workReadyQ1: s.workReadyQ1,
+      income: s.income,
+      parentalEd: s.parentalEd,
     };
 
     await prisma.student.upsert({
-      where: { studentNumber: parsed.studentNumber },
-      create: { studentNumber: parsed.studentNumber, ...data },
+      where: { studentNumber: s.studentNumber },
+      create: { studentNumber: s.studentNumber, ...data },
       update: data,
     });
 
@@ -83,10 +107,17 @@ export async function syncStudents(): Promise<number> {
 }
 
 export async function syncOutcomes(): Promise<number> {
-  const sheetId = process.env['GOOGLE_SHEETS_STUDENT_INFO_ID'];
-  if (!sheetId) throw new Error('GOOGLE_SHEETS_STUDENT_INFO_ID not set');
+  const sheetId = process.env['GOOGLE_SHEETS_STUDENT_INFO_V2'];
+  if (!sheetId) throw new Error('GOOGLE_SHEETS_STUDENT_INFO_V2 not set');
 
-  const dataRows = await getSheetRows(sheetId, 'Outcomes!A2:O');
+  // Wipe-before-resync: the V2 sheet is the authoritative source for phase
+  // outcomes. A row that existed in the legacy Outcomes tab but is absent
+  // from the new PhaseCompletion tab must not linger as stale data.
+  // student_phase_outcomes has no inbound FKs, so wiping is safe.
+  await prisma.studentPhaseOutcome.deleteMany({});
+  console.log('  student_phase_outcomes: cleared existing rows ahead of re-sync from PhaseCompletion');
+
+  const dataRows = await getSheetRows(sheetId, 'PhaseCompletion!A2:O');
   let synced = 0;
 
   for (let i = 0; i < dataRows.length; i += 1) {
@@ -132,6 +163,7 @@ export async function syncOutcomes(): Promise<number> {
 }
 
 export async function syncCertifications(): Promise<number> {
+  // Certifications stay on the LEGACY sheet — V2 doesn't have this tab.
   const sheetId = process.env['GOOGLE_SHEETS_STUDENT_INFO_ID'];
   if (!sheetId) throw new Error('GOOGLE_SHEETS_STUDENT_INFO_ID not set');
 

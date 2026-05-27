@@ -18,7 +18,7 @@ if (process.env['NODE_ENV'] !== 'production') {
 }
 
 export { PrismaClient } from '@prisma/client';
-export type { Prisma } from '@prisma/client';
+export type { Prisma, StudentEmployment } from '@prisma/client';
 
 export {
   resolveEntity,

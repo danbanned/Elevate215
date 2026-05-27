@@ -18,7 +18,7 @@ model Student {
   phone                    String?
   currentPhase             String?   @map("current_phase")
   enrollmentStatus         String?   @map("enrollment_status")
-  cohort                   String?
+  cohort                   Int?
   distanceToOffice         Float?    @map("distance_to_office")
   neighborhood             String?
   graduationDate           DateTime? @map("graduation_date")
@@ -50,6 +50,24 @@ model Student {
   income                   String?
   parentalEd               String?   @map("parental_ed")
 
+  // V2 sheet additions
+  dob                      DateTime? @db.Date
+  suffix                   String?
+  altSchoolEmail           String?   @map("alt_school_email")
+  asuriteUserId            String?   @map("asurite_user_id")
+  rapidAccountNumber       String?   @map("rapid_account_number")
+  altContact               String?   @map("alt_contact")
+  idCardNumber             String?   @map("id_card_number")
+  docFolderUrl             String?   @map("doc_folder_url")
+  tShirtSize               String?   @map("t_shirt_size")
+  algebraKeystoneScore     Decimal?  @map("algebra_keystone_score") @db.Decimal(6, 2)
+  worksOutsideLaunchpad    Boolean?  @map("works_outside_launchpad")
+  hoursOutsideCommitted    Decimal?  @map("hours_outside_committed") @db.Decimal(5, 2)
+  permissionSlip           Boolean?  @map("permission_slip")
+  extraTime                Boolean?  @map("extra_time")
+  workReadyQ1              String?   @map("work_ready_q1")
+  ell                      Boolean?
+
   createdAt                DateTime  @default(now()) @map("created_at")
   updatedAt                DateTime  @updatedAt @map("updated_at")
 
@@ -57,8 +75,10 @@ model Student {
   certifications    StudentCertification[]
   phaseOutcomes     StudentPhaseOutcome[]
   studentInfo       StudentInfo[]
+  employment        StudentEmployment[]
 
   @@index([canonicalName])
+  @@index([cohort])
   @@map("students")
 }
 
@@ -159,6 +179,31 @@ model StudentPhaseOutcome {
 
   @@index([studentId])
   @@map("student_phase_outcomes")
+}
+
+model StudentEmployment {
+  id             String    @id @default(uuid())
+  sourceId       String    @unique @map("source_id")
+  studentNumber  String    @map("student_number")
+  studentName    String?   @map("student_name")
+  employerName   String?   @map("employer_name")
+  employmentType String?   @map("employment_type")
+  jobTitle       String?   @map("job_title")
+  startDate      DateTime? @map("start_date") @db.Date
+  endDate        DateTime? @map("end_date") @db.Date
+  hourlyWage     Decimal?  @map("hourly_wage") @db.Decimal(8, 2)
+  weeklyHours    Decimal?  @map("weekly_hours") @db.Decimal(5, 2)
+  totalEarned    Decimal?  @map("total_earned") @db.Decimal(12, 2)
+  exitCode       String?   @map("exit_code")
+  notes          String?
+  lastSyncedAt   DateTime  @default(now()) @map("last_synced_at")
+
+  student Student? @relation(fields: [studentNumber], references: [studentNumber])
+
+  @@index([studentNumber])
+  @@index([employerName])
+  @@index([exitCode])
+  @@map("student_employment")
 }
 
 model StudentCompetency {

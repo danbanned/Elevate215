@@ -1,5 +1,6 @@
 import { runSync, type SyncRunRecord } from '@lp-ai/db';
 import { syncStudents, syncOutcomes, syncCertifications } from './sync-students.js';
+import { syncEmployment } from './sync-employment.js';
 import { syncRapid } from './sync-rapid.js';
 import { syncPex } from './sync-pex.js';
 import { syncDevelopmentCRM } from './sync-development-crm.js';
@@ -28,6 +29,7 @@ export async function sync(): Promise<SyncResult> {
   return runSync('google-sheets', async () => {
     const students = await safeRun('students', syncStudents);
     const outcomes = await safeRun('outcomes', syncOutcomes);
+    const employment = await safeRun('employment', syncEmployment);
     const certifications = await safeRun('certifications', syncCertifications);
     const dashboard = await safeRun('dashboard', syncDashboard);
     const phaseBudget = await safeRun('phase budget dashboard', syncPhaseBudgetDashboard);
@@ -52,7 +54,7 @@ export async function sync(): Promise<SyncResult> {
     }
 
     const total =
-      students + outcomes + certifications +
+      students + outcomes + employment + certifications +
       dashboard + phaseBudget + phaseQ3 + phase2025 +
       rapid + pex + competency + devCrm +
       attendance + enrollment + distanceUpdated;
@@ -60,12 +62,13 @@ export async function sync(): Promise<SyncResult> {
     return {
       status: 'ok',
       recordsUpserted: total,
-      notes: `students: ${students}; outcomes: ${outcomes}; certifications: ${certifications}; dashboard: ${dashboard}; phase_budget: ${phaseBudget}; phase_q3_2026: ${phaseQ3}; phase_2025: ${phase2025}; rapid: ${rapid}; pex: ${pex}; competency: ${competency}; dev_crm: ${devCrm}; attendance: ${attendance}; enrollment: ${enrollment}; distances: ${distanceUpdated} updated / ${distanceSkipped} skipped`,
+      notes: `students: ${students}; outcomes: ${outcomes}; employment: ${employment}; certifications: ${certifications}; dashboard: ${dashboard}; phase_budget: ${phaseBudget}; phase_q3_2026: ${phaseQ3}; phase_2025: ${phase2025}; rapid: ${rapid}; pex: ${pex}; competency: ${competency}; dev_crm: ${devCrm}; attendance: ${attendance}; enrollment: ${enrollment}; distances: ${distanceUpdated} updated / ${distanceSkipped} skipped`,
     };
   });
 }
 
 export { syncStudents, syncOutcomes, syncCertifications } from './sync-students.js';
+export { syncEmployment } from './sync-employment.js';
 export { syncRapid } from './sync-rapid.js';
 export { syncPex } from './sync-pex.js';
 export { syncDevelopmentCRM } from './sync-development-crm.js';

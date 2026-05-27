@@ -53,7 +53,13 @@ export function registerQueryEnrollment(server: McpServer): void {
         typeof raw['current_phase'] === 'string' ? (raw['current_phase'] as string) : undefined;
       const enrollmentStatus =
         typeof raw['enrollment_status'] === 'string' ? (raw['enrollment_status'] as string) : undefined;
-      const cohort = typeof raw['cohort'] === 'string' ? (raw['cohort'] as string) : undefined;
+      const cohortRaw = raw['cohort'];
+      const cohort: number | undefined =
+        typeof cohortRaw === 'number'
+          ? cohortRaw
+          : typeof cohortRaw === 'string' && cohortRaw.trim() !== '' && !isNaN(Number(cohortRaw))
+            ? Number(cohortRaw)
+            : undefined;
       const startDate = typeof raw['start_date'] === 'string' ? (raw['start_date'] as string) : undefined;
       const endDate = typeof raw['end_date'] === 'string' ? (raw['end_date'] as string) : undefined;
       const limit = typeof raw['limit'] === 'number' ? Math.min(raw['limit'] as number, 1000) : 500;
