@@ -38,6 +38,11 @@ RUN pnpm --filter @lp-ai/db generate
 RUN pnpm --filter @lp-ai/config build
 RUN pnpm --filter @lp-ai/db build
 RUN pnpm --filter @lp-ai/embedding build
+# Next.js 14 calls fs.stat() on .env during build for change tracking and
+# crashes if missing. The host's .env is excluded via .dockerignore (correct —
+# it holds secrets), so create an empty stub here. This file does not reach
+# the runner stage.
+RUN touch apps/hq/.env
 RUN pnpm --filter @lp-ai/hq build
 
 # ----- runner -----------------------------------------------------------------
