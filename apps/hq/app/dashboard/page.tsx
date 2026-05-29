@@ -115,7 +115,7 @@ function StatCard({
 const headlineSql = `
   SELECT
     (SELECT COUNT(*)::text FROM students) AS total_students,
-    (SELECT COUNT(*)::text FROM students WHERE LOWER(COALESCE(enrollment_status, '')) = 'active') AS active_students,
+    (SELECT COUNT(*)::text FROM students WHERE UPPER(COALESCE(enrollment_status, '')) = 'E') AS active_students,
     (SELECT COUNT(DISTINCT cohort)::text FROM attendance_records WHERE cohort IN (1, 2, 3)) AS cohorts_running
 `;
 
