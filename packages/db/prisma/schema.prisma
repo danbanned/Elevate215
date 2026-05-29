@@ -347,16 +347,26 @@ model DocumentChunk {
 }
 
 model UsageLog {
-  id         String   @id @default(uuid())
-  toolName   String   @map("tool_name")
-  inputJson  Json?    @map("input_json")
-  outputJson Json?    @map("output_json")
-  durationMs Int?     @map("duration_ms")
-  error      String?
-  calledAt   DateTime @default(now()) @map("called_at")
+  id                  String   @id @default(uuid())
+  toolName            String   @map("tool_name")
+  inputJson           Json?    @map("input_json")
+  outputJson          Json?    @map("output_json")
+  durationMs          Int?     @map("duration_ms")
+  error               String?
+  calledAt            DateTime @default(now()) @map("called_at")
+  anthropicUserId     String?  @map("anthropic_user_id")
+  anthropicUserEmail  String?  @map("anthropic_user_email")
+  anthropicWorkspace  String?  @map("anthropic_workspace")
+  inputTokens         Int?     @map("input_tokens")
+  outputTokens        Int?     @map("output_tokens")
+  cacheReadTokens     Int?     @map("cache_read_tokens")
+  cacheCreationTokens Int?     @map("cache_creation_tokens")
+  model               String?
 
   @@index([toolName])
   @@index([calledAt])
+  @@index([anthropicUserId])
+  @@index([anthropicUserEmail])
   @@map("usage_logs")
 }
 

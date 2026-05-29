@@ -34,6 +34,7 @@ Status legend: ✅ Complete · 🟡 Built (awaiting credential to activate) · �
 | 19 | Roam connector | [19-roam-connector.md](19-roam-connector.md) | 🟡 Scaffold | Awaiting `ROAM_API_KEY` |
 | 20 | BigQuery connector (source pull) | [20-bigquery-connector.md](20-bigquery-connector.md) | 🟡 Scaffold | Awaiting Google service account |
 | 21 | Athena over S3 (analytics warehouse) | [21-athena-s3.md](21-athena-s3.md) | 🔲 Pending | |
+| 22 | Anthropic Admin API usage connector | [22-anthropic-usage-connector.md](22-anthropic-usage-connector.md) | 🔲 Pending | Populates token usage in HQ home page |
 
 For the working local-dev path that doesn't require any AWS or external credentials, see [docs/runbooks/local-dev.md](../runbooks/local-dev.md). For the credential-gathering plan, see [docs/runbooks/credentials-checklist.md](../runbooks/credentials-checklist.md).
 

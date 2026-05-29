@@ -1,4 +1,8 @@
 import { prisma } from '@lp-ai/db';
+import { AttendanceTrendChart, type AttendanceTrendPoint } from './charts/AttendanceTrendChart';
+import { CohortCompletionChart, type CohortCompletionPoint } from './charts/CohortCompletionChart';
+import { CompetencyAttendanceHeatmap, type HeatmapCell } from './charts/CompetencyAttendanceHeatmap';
+import { CompetencyScatterChart, type CompetencyScatterPoint } from './charts/CompetencyScatterChart';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,30 +25,6 @@ interface AttendanceMonthRow {
   avg_attendance: string;
 }
 
-interface AttendanceFlagRow {
-  student_name: string;
-  cohort: number;
-  avg_attendance: string;
-}
-
-interface StipendRow {
-  program: string;
-  month: string;
-  total_amount: string;
-}
-
-interface StipendDiagRow {
-  tab_name: string;
-  row_count: string;
-  sample_row_data: string;
-  jsonb_typeof: string;
-  sample_date: string | null;
-  sample_amount: string | null;
-  sample_description: string | null;
-  sample_date_time: string | null;
-  sample_total_amount: string | null;
-}
-
 interface CompetencyAvgRow {
   competency: string;
   avg_performance: string;
@@ -53,19 +33,25 @@ interface CompetencyAvgRow {
   student_count: string;
 }
 
-interface MissedErRow {
-  student_name: string;
-  competency: string;
-  missed_er: number;
+interface HeadlineRow {
+  total_students: string;
+  active_students: string;
+  cohorts_running: string;
 }
 
-interface StipendRecipientRow {
-  recipient_label: string;
-  matched: boolean;
-  has_extraction: boolean;
-  program: string;
-  txn_count: string;
-  total_amount: string;
+interface CompetencyScatterRow {
+  student_number: string;
+  student_name: string;
+  competency: string;
+  growth: string;
+  progress: string;
+}
+
+interface HeatmapRow {
+  competency: string;
+  bucket: string;
+  avg_growth: string | null;
+  student_count: string;
 }
 
 type QueryResult<T> =
@@ -93,6 +79,13 @@ function pct(complete: string, started: string): string {
   return `${Math.round((c / s) * 100).toString()}%`;
 }
 
+function pctNum(complete: string, started: string): number | null {
+  const c = parseInt(complete, 10);
+  const s = parseInt(started, 10);
+  if (!s) return null;
+  return Math.round((c / s) * 100);
+}
+
 function SectionError({ message }: { message: string }): JSX.Element {
   return (
     <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -100,6 +93,31 @@ function SectionError({ message }: { message: string }): JSX.Element {
     </div>
   );
 }
+
+function StatCard({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}): JSX.Element {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="text-xs font-medium uppercase tracking-wide text-muted">{label}</div>
+      <div className="mt-2 text-3xl font-semibold text-ink">{value}</div>
+      {hint && <div className="mt-1 text-xs text-muted">{hint}</div>}
+    </div>
+  );
+}
+
+const headlineSql = `
+  SELECT
+    (SELECT COUNT(*)::text FROM students) AS total_students,
+    (SELECT COUNT(*)::text FROM students WHERE LOWER(COALESCE(enrollment_status, '')) = 'active') AS active_students,
+    (SELECT COUNT(DISTINCT cohort)::text FROM attendance_records WHERE cohort IN (1, 2, 3)) AS cohorts_running
+`;
 
 const completionSql = `
   WITH base AS (
@@ -167,187 +185,7 @@ const attendanceMonthlySql = `
   SELECT cohort, month, ROUND(AVG(student_rate), 1)::text AS avg_attendance
   FROM per_student_month
   GROUP BY cohort, month
-  ORDER BY cohort, month DESC
-`;
-
-const attendanceFlaggedSql = `
-  WITH rates AS (
-    SELECT
-      student_number,
-      cohort,
-      ROUND(
-        COUNT(CASE WHEN UPPER(code) IN ('P', 'L') THEN 1 END)::numeric
-          / NULLIF(COUNT(*), 0) * 100, 1
-      ) AS avg_att
-    FROM attendance_records
-    WHERE cohort IN (1, 2, 3) AND code IS NOT NULL
-    GROUP BY student_number, cohort
-    HAVING COUNT(CASE WHEN UPPER(code) IN ('P', 'L') THEN 1 END)::numeric
-             / NULLIF(COUNT(*), 0) * 100 < 80
-  )
-  SELECT
-    COALESCE(s.canonical_name, r.student_number) AS student_name,
-    r.cohort,
-    r.avg_att::text AS avg_attendance
-  FROM rates r
-  LEFT JOIN students s ON s.student_number = r.student_number
-  ORDER BY r.avg_att ASC
-  LIMIT 50
-`;
-
-const stipendsSql = `
-  WITH normalized AS (
-    SELECT
-      CASE WHEN jsonb_typeof(row_data) = 'string'
-           THEN (row_data #>> '{}')::jsonb
-           ELSE row_data
-      END AS row_data
-    FROM finance_snapshots
-    WHERE tab_name LIKE 'pex:FY%' OR tab_name LIKE 'rapid:FY%'
-  ),
-  raw AS (
-    SELECT
-      COALESCE(NULLIF(TRIM(row_data->>'program'), ''), 'Unknown') AS program,
-      COALESCE(
-        NULLIF(TRIM(row_data->>'date'), ''),
-        NULLIF(TRIM(row_data->>'date_time'), '')
-      ) AS raw_date,
-      COALESCE(
-        NULLIF(TRIM(row_data->>'amount'), ''),
-        NULLIF(TRIM(row_data->>'total_amount'), ''),
-        NULLIF(TRIM(row_data->>'base_amount'), '')
-      ) AS raw_amount
-    FROM normalized
-  ),
-  cleaned AS (
-    SELECT
-      program,
-      SPLIT_PART(raw_date, ' ', 1) AS date_part,
-      REPLACE(REPLACE(raw_amount, ',', ''), '$', '') AS amount_part
-    FROM raw
-  ),
-  parsed AS (
-    SELECT program, date_part, amount_part
-    FROM cleaned
-    WHERE date_part ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}$'
-      AND amount_part ~ '^-?[0-9]+([.][0-9]+)?$'
-  )
-  SELECT
-    program,
-    TO_CHAR(TO_DATE(date_part, 'MM/DD/YYYY'), 'YYYY-MM') AS month,
-    ROUND(SUM(amount_part::numeric), 2)::text AS total_amount
-  FROM parsed
-  GROUP BY program, TO_CHAR(TO_DATE(date_part, 'MM/DD/YYYY'), 'YYYY-MM')
-  ORDER BY month DESC, program
-`;
-
-const stipendDiagSql = `
-  SELECT
-    t.tab_name,
-    t.row_count::text AS row_count,
-    LEFT(s.row_data::text, 400) AS sample_row_data,
-    jsonb_typeof(s.row_data) AS jsonb_typeof,
-    s.normalized->>'date'         AS sample_date,
-    s.normalized->>'amount'       AS sample_amount,
-    s.normalized->>'description'  AS sample_description,
-    s.normalized->>'date_time'    AS sample_date_time,
-    s.normalized->>'total_amount' AS sample_total_amount
-  FROM (
-    SELECT tab_name, COUNT(*) AS row_count
-    FROM finance_snapshots
-    WHERE tab_name LIKE 'pex:FY%' OR tab_name LIKE 'rapid:FY%'
-    GROUP BY tab_name
-  ) t
-  JOIN LATERAL (
-    SELECT
-      row_data,
-      CASE WHEN jsonb_typeof(row_data) = 'string'
-           THEN (row_data #>> '{}')::jsonb
-           ELSE row_data
-      END AS normalized
-    FROM finance_snapshots
-    WHERE tab_name = t.tab_name
-    ORDER BY last_synced_at DESC NULLS LAST
-    LIMIT 1
-  ) s ON true
-  ORDER BY t.tab_name
-`;
-
-const stipendRecipientsSql = `
-  WITH normalized AS (
-    SELECT
-      CASE WHEN jsonb_typeof(row_data) = 'string'
-           THEN (row_data #>> '{}')::jsonb
-           ELSE row_data
-      END AS row_data
-    FROM finance_snapshots
-    WHERE tab_name LIKE 'pex:FY%' OR tab_name LIKE 'rapid:FY%'
-  ),
-  raw AS (
-    SELECT
-      COALESCE(NULLIF(TRIM(row_data->>'program'), ''), 'Unknown') AS program,
-      COALESCE(
-        NULLIF(TRIM(row_data->>'date'), ''),
-        NULLIF(TRIM(row_data->>'date_time'), '')
-      ) AS raw_date,
-      COALESCE(
-        NULLIF(TRIM(row_data->>'amount'), ''),
-        NULLIF(TRIM(row_data->>'total_amount'), ''),
-        NULLIF(TRIM(row_data->>'base_amount'), '')
-      ) AS raw_amount,
-      COALESCE(
-        SUBSTRING(row_data->>'description'    FROM 'Funding Adjustment To: (.+)$'),
-        SUBSTRING(row_data->>'reference_info' FROM 'Funds Transfer to (.+) [0-9]+$')
-      ) AS raw_recipient
-    FROM normalized
-  ),
-  cleaned AS (
-    SELECT
-      program,
-      REPLACE(REPLACE(raw_amount, ',', ''), '$', '') AS amount_part,
-      SPLIT_PART(raw_date, ' ', 1) AS date_part,
-      NULLIF(TRIM(raw_recipient), '') AS recipient
-    FROM raw
-  ),
-  valid AS (
-    SELECT program, amount_part, recipient
-    FROM cleaned
-    WHERE date_part ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}$'
-      AND amount_part ~ '^-?[0-9]+([.][0-9]+)?$'
-  ),
-  joined AS (
-    SELECT
-      v.program,
-      v.amount_part::numeric AS amount,
-      v.recipient,
-      s.canonical_name AS student_match
-    FROM valid v
-    LEFT JOIN students s
-      ON v.recipient IS NOT NULL
-     AND LOWER(TRIM(s.canonical_name)) = LOWER(TRIM(v.recipient))
-  )
-  SELECT
-    CASE
-      WHEN recipient IS NULL THEN '— Admin / Funding —'
-      WHEN student_match IS NOT NULL THEN student_match
-      ELSE recipient
-    END AS recipient_label,
-    (student_match IS NOT NULL) AS matched,
-    (recipient IS NOT NULL) AS has_extraction,
-    program,
-    COUNT(*)::text AS txn_count,
-    ROUND(SUM(amount), 2)::text AS total_amount
-  FROM joined
-  GROUP BY
-    CASE
-      WHEN recipient IS NULL THEN '— Admin / Funding —'
-      WHEN student_match IS NOT NULL THEN student_match
-      ELSE recipient
-    END,
-    (student_match IS NOT NULL),
-    (recipient IS NOT NULL),
-    program
-  ORDER BY SUM(amount) DESC NULLS LAST
+  ORDER BY cohort, month
 `;
 
 const competencyAvgsSql = `
@@ -363,395 +201,383 @@ const competencyAvgsSql = `
   ORDER BY competency
 `;
 
-const missedErsSql = `
+const competencyScatterSql = `
   SELECT
+    sc.student_number,
     COALESCE(s.canonical_name, sc.student_number) AS student_name,
     sc.competency,
-    sc.missed_er
+    sc.growth::text AS growth,
+    sc.progress::text AS progress
   FROM student_competencies sc
   LEFT JOIN students s ON s.student_number = sc.student_number
-  WHERE sc.missed_er > 1
-  ORDER BY sc.missed_er DESC, student_name
-  LIMIT 100
+  WHERE sc.growth IS NOT NULL AND sc.progress IS NOT NULL
+  ORDER BY sc.competency, sc.student_number
+`;
+
+const heatmapSql = `
+  WITH student_attendance AS (
+    SELECT
+      student_number,
+      ROUND(
+        COUNT(CASE WHEN UPPER(code) IN ('P', 'L') THEN 1 END)::numeric
+          / NULLIF(COUNT(*), 0) * 100, 1
+      ) AS att_rate
+    FROM attendance_records
+    WHERE cohort IN (1, 2, 3) AND code IS NOT NULL
+    GROUP BY student_number
+    HAVING COUNT(*) >= 5
+  ),
+  bucketed AS (
+    SELECT
+      student_number,
+      CASE
+        WHEN att_rate < 70 THEN '<70%'
+        WHEN att_rate < 80 THEN '70–80%'
+        WHEN att_rate < 90 THEN '80–90%'
+        ELSE '90%+'
+      END AS bucket
+    FROM student_attendance
+  ),
+  joined AS (
+    SELECT
+      sc.competency,
+      b.bucket,
+      sc.growth
+    FROM student_competencies sc
+    INNER JOIN bucketed b ON b.student_number = sc.student_number
+    WHERE sc.growth IS NOT NULL
+  )
+  SELECT
+    competency,
+    bucket,
+    ROUND(AVG(growth), 2)::text AS avg_growth,
+    COUNT(*)::text AS student_count
+  FROM joined
+  GROUP BY competency, bucket
+  ORDER BY competency, bucket
 `;
 
 export default async function DashboardPage(): Promise<JSX.Element> {
   const [
+    headline,
     completion,
     attendanceMonthly,
-    attendanceFlagged,
-    stipends,
-    stipendDiag,
-    stipendRecipients,
     competencyAvgs,
-    missedErs,
+    competencyScatter,
+    heatmap,
   ] = await Promise.all([
+    safeQuery('headline', () => prisma.$queryRawUnsafe<HeadlineRow[]>(headlineSql)),
     safeQuery('completion', () =>
       prisma.$queryRawUnsafe<Array<CompletionRow & { sort_order: number }>>(completionSql),
     ),
     safeQuery('attendance-monthly', () =>
       prisma.$queryRawUnsafe<AttendanceMonthRow[]>(attendanceMonthlySql),
     ),
-    safeQuery('attendance-flagged', () =>
-      prisma.$queryRawUnsafe<AttendanceFlagRow[]>(attendanceFlaggedSql),
-    ),
-    safeQuery('stipends', () =>
-      prisma.$queryRawUnsafe<StipendRow[]>(stipendsSql),
-    ),
-    safeQuery('stipend-diag', () =>
-      prisma.$queryRawUnsafe<StipendDiagRow[]>(stipendDiagSql),
-    ),
-    safeQuery('stipend-recipients', () =>
-      prisma.$queryRawUnsafe<StipendRecipientRow[]>(stipendRecipientsSql),
-    ),
     safeQuery('competency-avgs', () =>
       prisma.$queryRawUnsafe<CompetencyAvgRow[]>(competencyAvgsSql),
     ),
-    safeQuery('missed-ers', () =>
-      prisma.$queryRawUnsafe<MissedErRow[]>(missedErsSql),
+    safeQuery('competency-scatter', () =>
+      prisma.$queryRawUnsafe<CompetencyScatterRow[]>(competencyScatterSql),
+    ),
+    safeQuery('heatmap', () =>
+      prisma.$queryRawUnsafe<HeatmapRow[]>(heatmapSql),
     ),
   ]);
 
+  const headlineRow = headline.data?.[0];
   const completionRows = completion.data ?? [];
   const monthlyRows = attendanceMonthly.data ?? [];
-  const flaggedRows = attendanceFlagged.data ?? [];
-  const stipendRows = stipends.data ?? [];
   const competencyRows = competencyAvgs.data ?? [];
-  const missedErRows = missedErs.data ?? [];
+  const scatterRows = competencyScatter.data ?? [];
+  const heatmapRows = heatmap.data ?? [];
 
+  // Cohort completion → bar chart points (exclude "All Time" totals)
+  const completionChartData: CohortCompletionPoint[] = completionRows
+    .filter((r) => r.cohort_year !== 'All Time')
+    .map((r) => ({
+      cohort: r.cohort_year,
+      Foundations: pctNum(r.foundations_complete, r.foundations_started),
+      '101': pctNum(r.phase_101_complete, r.phase_101_started),
+      Lightspeed: pctNum(r.lightspeed_complete, r.lightspeed_started),
+      LiftOff: pctNum(r.liftoff_complete, r.liftoff_started),
+    }))
+    .reverse(); // ascending year order for chart
+
+  // Attendance → line chart points (pivot cohort to columns)
   const attendanceByCohort = new Map<number, AttendanceMonthRow[]>();
   for (const row of monthlyRows) {
     const c = Number(row.cohort);
     if (!attendanceByCohort.has(c)) attendanceByCohort.set(c, []);
     attendanceByCohort.get(c)!.push(row);
   }
-
-  const stipendPrograms = [...new Set(stipendRows.map((r) => r.program))].sort();
-  const stipendMonths = [...new Set(stipendRows.map((r) => r.month))].sort().reverse();
-  const stipendMap = new Map(stipendRows.map((r) => [`${r.program}|${r.month}`, r.total_amount]));
-
-  const recipientRows = stipendRecipients.data ?? [];
-  interface RecipientAgg {
-    label: string;
-    matched: boolean;
-    hasExtraction: boolean;
-    txnCount: number;
-    total: number;
-    programs: Map<string, number>;
+  for (const rows of attendanceByCohort.values()) {
+    rows.sort((a, b) => a.month.localeCompare(b.month));
   }
-  const recipientAggMap = new Map<string, RecipientAgg>();
-  let stipendMatchedTxns = 0;
-  let stipendMatchedAmt = 0;
-  let stipendUnmatchedTxns = 0;
-  let stipendUnmatchedAmt = 0;
-  let stipendAdminTxns = 0;
-  let stipendAdminAmt = 0;
-  for (const r of recipientRows) {
-    const amt = parseFloat(r.total_amount) || 0;
-    const txns = parseInt(r.txn_count, 10) || 0;
-    if (!r.has_extraction) {
-      stipendAdminTxns += txns;
-      stipendAdminAmt += amt;
-    } else if (r.matched) {
-      stipendMatchedTxns += txns;
-      stipendMatchedAmt += amt;
-    } else {
-      stipendUnmatchedTxns += txns;
-      stipendUnmatchedAmt += amt;
+
+  const allMonths = [...new Set(monthlyRows.map((r) => r.month))].sort();
+  const attendanceChartData: AttendanceTrendPoint[] = allMonths.map((month) => {
+    const point: AttendanceTrendPoint = { month };
+    for (const cohort of [1, 2, 3] as const) {
+      const row = (attendanceByCohort.get(cohort) ?? []).find((r) => r.month === month);
+      const v = row ? parseFloat(row.avg_attendance) : NaN;
+      if (!isNaN(v)) {
+        if (cohort === 1) point.Cohort1 = v;
+        if (cohort === 2) point.Cohort2 = v;
+        if (cohort === 3) point.Cohort3 = v;
+      }
     }
-    const existing = recipientAggMap.get(r.recipient_label) ?? {
-      label: r.recipient_label,
-      matched: r.matched,
-      hasExtraction: r.has_extraction,
-      txnCount: 0,
-      total: 0,
-      programs: new Map<string, number>(),
-    };
-    existing.txnCount += txns;
-    existing.total += amt;
-    existing.programs.set(r.program, (existing.programs.get(r.program) ?? 0) + amt);
-    recipientAggMap.set(r.recipient_label, existing);
-  }
-  const recipientAggs = [...recipientAggMap.values()].sort(
-    (a, b) => Math.abs(b.total) - Math.abs(a.total),
-  );
+    return point;
+  });
+
+  // Competency scatter
+  const scatterChartData: CompetencyScatterPoint[] = scatterRows
+    .map((r) => ({
+      student: r.student_name,
+      competency: r.competency,
+      growth: parseFloat(r.growth),
+      progress: parseFloat(r.progress),
+    }))
+    .filter((p) => !isNaN(p.growth) && !isNaN(p.progress));
+
+  // Heatmap
+  const heatmapChartData: HeatmapCell[] = heatmapRows.map((r) => ({
+    competency: r.competency,
+    bucket: r.bucket,
+    avg_growth: r.avg_growth == null ? null : parseFloat(r.avg_growth),
+    student_count: parseInt(r.student_count, 10),
+  }));
 
   return (
     <div className="space-y-12">
-      <header>
-        <h1 className="text-2xl font-semibold text-ink">Dashboard</h1>
-        <p className="mt-1 text-sm text-muted">
-          Cross-source analytics: program completion, attendance, stipends, and competency.
+      <header className="border-b border-slate-200 pb-6">
+        <h1 className="text-3xl font-semibold tracking-tight text-ink">Launchpad Dashboard</h1>
+        <p className="mt-2 text-sm text-muted">
+          Program completion, attendance trends, and competency outcomes across active cohorts.
         </p>
       </header>
 
+      {/* Headline KPIs */}
+      {headlineRow && (
+        <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatCard label="Total Students" value={headlineRow.total_students} />
+          <StatCard label="Active Students" value={headlineRow.active_students} hint="Currently enrolled" />
+          <StatCard label="Cohorts Tracked" value={headlineRow.cohorts_running} hint="With attendance data" />
+        </section>
+      )}
+
       {/* Program Completion */}
       <section>
-        <h2 className="text-lg font-semibold text-ink mb-4">Program Completion</h2>
+        <div className="mb-4 flex items-baseline justify-between">
+          <h2 className="text-lg font-semibold text-ink">Program Completion</h2>
+          <span className="text-xs text-muted">Completion % by phase, grouped by cohort year</span>
+        </div>
         {completion.error ? (
           <SectionError message={completion.error} />
         ) : completionRows.length === 0 ? (
           <p className="text-sm text-muted">No phase outcome data synced yet.</p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border bg-white shadow-sm">
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr className="bg-slate-50 text-left">
-                  <th className="px-4 py-2 font-medium text-muted border border-slate-200">Cohort</th>
-                  <th className="px-4 py-2 font-medium text-muted border border-slate-200">Students</th>
-                  <th className="px-4 py-2 font-medium text-muted border border-slate-200 text-center" colSpan={2}>Foundations</th>
-                  <th className="px-4 py-2 font-medium text-muted border border-slate-200 text-center" colSpan={2}>101</th>
-                  <th className="px-4 py-2 font-medium text-muted border border-slate-200 text-center" colSpan={2}>Lightspeed</th>
-                  <th className="px-4 py-2 font-medium text-muted border border-slate-200 text-center" colSpan={2}>LiftOff</th>
-                </tr>
-                <tr className="bg-slate-50 text-xs text-muted">
-                  <th className="px-4 py-1 border border-slate-200" colSpan={2} />
-                  <th className="px-4 py-1 border border-slate-200">Started</th>
-                  <th className="px-4 py-1 border border-slate-200">Completed</th>
-                  <th className="px-4 py-1 border border-slate-200">Started</th>
-                  <th className="px-4 py-1 border border-slate-200">Completed</th>
-                  <th className="px-4 py-1 border border-slate-200">Started</th>
-                  <th className="px-4 py-1 border border-slate-200">Completed</th>
-                  <th className="px-4 py-1 border border-slate-200">Started</th>
-                  <th className="px-4 py-1 border border-slate-200">Completed</th>
-                </tr>
-              </thead>
-              <tbody>
-                {completionRows.map((row) => {
-                  const isTotal = row.cohort_year === 'All Time';
-                  const rowClass = isTotal
-                    ? 'border-t-2 border-slate-400 bg-slate-50 font-semibold'
-                    : 'hover:bg-slate-50';
-                  const cellClass = `px-4 py-2 border border-slate-200${isTotal ? ' text-ink' : ''}`;
-                  return (
-                    <tr key={row.cohort_year} className={rowClass}>
-                      <td className={`${cellClass} font-medium`}>{row.cohort_year}</td>
-                      <td className={cellClass}>{row.student_count}</td>
-                      <td className={cellClass}>{row.foundations_started}</td>
-                      <td className={cellClass}>
-                        {row.foundations_complete}{' '}
-                        <span className="text-muted text-xs">
-                          ({pct(row.foundations_complete, row.foundations_started)})
-                        </span>
-                      </td>
-                      <td className={cellClass}>{row.phase_101_started}</td>
-                      <td className={cellClass}>
-                        {row.phase_101_complete}{' '}
-                        <span className="text-muted text-xs">
-                          ({pct(row.phase_101_complete, row.phase_101_started)})
-                        </span>
-                      </td>
-                      <td className={cellClass}>{row.lightspeed_started}</td>
-                      <td className={cellClass}>
-                        {row.lightspeed_complete}{' '}
-                        <span className="text-muted text-xs">
-                          ({pct(row.lightspeed_complete, row.lightspeed_started)})
-                        </span>
-                      </td>
-                      <td className={cellClass}>{row.liftoff_started}</td>
-                      <td className={cellClass}>
-                        {row.liftoff_complete}{' '}
-                        <span className="text-muted text-xs">
-                          ({pct(row.liftoff_complete, row.liftoff_started)})
-                        </span>
-                      </td>
+          <div className="space-y-6">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <CohortCompletionChart data={completionChartData} />
+            </div>
+            <details className="rounded-xl border border-slate-200 bg-white shadow-sm">
+              <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-ink hover:bg-slate-50">
+                Show underlying table
+              </summary>
+              <div className="overflow-x-auto border-t border-slate-200">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 text-left">
+                      <th className="px-4 py-2 font-medium text-muted border border-slate-200">Cohort</th>
+                      <th className="px-4 py-2 font-medium text-muted border border-slate-200">Students</th>
+                      <th className="px-4 py-2 font-medium text-muted border border-slate-200 text-center" colSpan={2}>Foundations</th>
+                      <th className="px-4 py-2 font-medium text-muted border border-slate-200 text-center" colSpan={2}>101</th>
+                      <th className="px-4 py-2 font-medium text-muted border border-slate-200 text-center" colSpan={2}>Lightspeed</th>
+                      <th className="px-4 py-2 font-medium text-muted border border-slate-200 text-center" colSpan={2}>LiftOff</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                    <tr className="bg-slate-50 text-xs text-muted">
+                      <th className="px-4 py-1 border border-slate-200" colSpan={2} />
+                      <th className="px-4 py-1 border border-slate-200">Started</th>
+                      <th className="px-4 py-1 border border-slate-200">Completed</th>
+                      <th className="px-4 py-1 border border-slate-200">Started</th>
+                      <th className="px-4 py-1 border border-slate-200">Completed</th>
+                      <th className="px-4 py-1 border border-slate-200">Started</th>
+                      <th className="px-4 py-1 border border-slate-200">Completed</th>
+                      <th className="px-4 py-1 border border-slate-200">Started</th>
+                      <th className="px-4 py-1 border border-slate-200">Completed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {completionRows.map((row) => {
+                      const isTotal = row.cohort_year === 'All Time';
+                      const rowClass = isTotal
+                        ? 'border-t-2 border-slate-400 bg-slate-50 font-semibold'
+                        : 'hover:bg-slate-50';
+                      const cellClass = `px-4 py-2 border border-slate-200${isTotal ? ' text-ink' : ''}`;
+                      return (
+                        <tr key={row.cohort_year} className={rowClass}>
+                          <td className={`${cellClass} font-medium`}>{row.cohort_year}</td>
+                          <td className={cellClass}>{row.student_count}</td>
+                          <td className={cellClass}>{row.foundations_started}</td>
+                          <td className={cellClass}>
+                            {row.foundations_complete}{' '}
+                            <span className="text-muted text-xs">
+                              ({pct(row.foundations_complete, row.foundations_started)})
+                            </span>
+                          </td>
+                          <td className={cellClass}>{row.phase_101_started}</td>
+                          <td className={cellClass}>
+                            {row.phase_101_complete}{' '}
+                            <span className="text-muted text-xs">
+                              ({pct(row.phase_101_complete, row.phase_101_started)})
+                            </span>
+                          </td>
+                          <td className={cellClass}>{row.lightspeed_started}</td>
+                          <td className={cellClass}>
+                            {row.lightspeed_complete}{' '}
+                            <span className="text-muted text-xs">
+                              ({pct(row.lightspeed_complete, row.lightspeed_started)})
+                            </span>
+                          </td>
+                          <td className={cellClass}>{row.liftoff_started}</td>
+                          <td className={cellClass}>
+                            {row.liftoff_complete}{' '}
+                            <span className="text-muted text-xs">
+                              ({pct(row.liftoff_complete, row.liftoff_started)})
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </details>
           </div>
         )}
       </section>
 
       {/* Attendance */}
       <section>
-        <h2 className="text-lg font-semibold text-ink mb-4">Attendance</h2>
+        <div className="mb-4 flex items-baseline justify-between">
+          <h2 className="text-lg font-semibold text-ink">Attendance</h2>
+          <span className="text-xs text-muted">Monthly trend by cohort · 80% threshold marked</span>
+        </div>
         {attendanceMonthly.error ? (
           <SectionError message={attendanceMonthly.error} />
         ) : monthlyRows.length === 0 ? (
           <p className="text-sm text-muted">No attendance data synced yet.</p>
         ) : (
           <div className="space-y-6">
-            {[1, 2, 3].map((cohort) => {
-              const rows = attendanceByCohort.get(cohort) ?? [];
-              if (rows.length === 0) return null;
-              return (
-                <div key={cohort}>
-                  <h3 className="text-sm font-medium text-ink mb-2">Cohort {cohort} — Monthly Average</h3>
-                  {cohort === 1 && (
-                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-2">
-                      <span className="font-medium">Data caveat:</span> Cohort 1 attendance source may be missing Jan–Aug 2023.
-                      Any month before Sept 2023 should be treated as incomplete. Late (L) days count as present in the % below.
-                    </p>
-                  )}
-                  <div className="overflow-x-auto">
-                    <table className="text-sm border-collapse">
-                      <thead>
-                        <tr className="bg-slate-50">
-                          {rows.map((r) => (
-                            <th key={r.month} className="px-3 py-2 font-medium text-muted border border-slate-200 text-center min-w-[80px]">
-                              {r.month}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          {rows.map((r) => {
-                            const val = parseFloat(r.avg_attendance);
-                            const flagged = val < 80;
-                            return (
-                              <td key={r.month} className={`px-3 py-2 border border-slate-200 text-center ${flagged ? 'bg-red-50 text-red-700 font-semibold' : 'text-ink'}`}>
-                                {r.avg_attendance}%
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              );
-            })}
-            {attendanceFlagged.error ? (
-              <SectionError message={attendanceFlagged.error} />
-            ) : flaggedRows.length > 0 ? (
-              <div>
-                <h3 className="text-sm font-medium text-red-700 mb-2">Students Below 80% Attendance</h3>
-                <div className="overflow-x-auto rounded-lg border bg-white shadow-sm">
-                  <table className="w-full text-sm border-collapse">
-                    <thead>
-                      <tr className="bg-red-50 text-left">
-                        <th className="px-4 py-2 font-medium text-muted border border-slate-200">Student</th>
-                        <th className="px-4 py-2 font-medium text-muted border border-slate-200">Cohort</th>
-                        <th className="px-4 py-2 font-medium text-muted border border-slate-200">Avg Attendance</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {flaggedRows.map((row, i) => (
-                        <tr key={i} className="hover:bg-slate-50">
-                          <td className="px-4 py-2 border border-slate-200">{row.student_name}</td>
-                          <td className="px-4 py-2 border border-slate-200">{row.cohort}</td>
-                          <td className="px-4 py-2 border border-slate-200 text-red-600 font-semibold">{row.avg_attendance}%</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <AttendanceTrendChart data={attendanceChartData} />
+              <p className="mt-3 text-xs text-amber-700">
+                <span className="font-medium">Caveat:</span> Cohort 1 source may be missing Jan–Aug 2023.
+                Late (L) days count as present.
+              </p>
+            </div>
+            <details className="rounded-xl border border-slate-200 bg-white shadow-sm">
+              <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-ink hover:bg-slate-50">
+                Show per-cohort monthly tables
+              </summary>
+              <div className="space-y-4 border-t border-slate-200 p-4">
+                {[1, 2, 3].map((cohort) => {
+                  const rows = attendanceByCohort.get(cohort) ?? [];
+                  if (rows.length === 0) return null;
+                  return (
+                    <div key={cohort}>
+                      <h3 className="mb-2 text-sm font-medium text-ink">Cohort {cohort}</h3>
+                      <div className="overflow-x-auto">
+                        <table className="text-sm border-collapse">
+                          <thead>
+                            <tr className="bg-slate-50">
+                              {rows.map((r) => (
+                                <th
+                                  key={r.month}
+                                  className="px-3 py-2 font-medium text-muted border border-slate-200 text-center min-w-[80px]"
+                                >
+                                  {r.month}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              {rows.map((r) => {
+                                const val = parseFloat(r.avg_attendance);
+                                const flagged = val < 80;
+                                return (
+                                  <td
+                                    key={r.month}
+                                    className={`px-3 py-2 border border-slate-200 text-center ${
+                                      flagged ? 'bg-red-50 text-red-700 font-semibold' : 'text-ink'
+                                    }`}
+                                  >
+                                    {r.avg_attendance}%
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            ) : null}
+            </details>
           </div>
         )}
       </section>
 
-      {/* Stipends */}
+      {/* Competency */}
       <section>
-        <h2 className="text-lg font-semibold text-ink mb-4">Stipends — Monthly Totals</h2>
-        {stipends.error ? (
-          <SectionError message={stipends.error} />
-        ) : stipendRows.length === 0 ? (
-          <div className="space-y-3">
-            <p className="text-sm text-muted">No stipend transactions matched. Diagnostic — what&apos;s actually stored per tab:</p>
-            {(stipendDiag.data ?? []).length === 0 ? (
-              <p className="text-xs text-muted">
-                finance_snapshots has zero rows where tab_name LIKE &apos;pex:FY%&apos; or &apos;rapid:FY%&apos;.
-              </p>
-            ) : (
-              <div className="space-y-4">
-                {(stipendDiag.data ?? []).map((r) => (
-                  <div key={r.tab_name} className="rounded-lg border border-slate-200 bg-white p-3 text-xs">
-                    <div className="font-mono font-semibold mb-1">
-                      {r.tab_name} <span className="text-muted font-normal">({r.row_count} rows, jsonb_typeof = {r.jsonb_typeof})</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-x-4 mb-2">
-                      <div><span className="text-muted">date:</span> <span className="font-mono">{r.sample_date ?? <span className="text-slate-400">null</span>}</span></div>
-                      <div><span className="text-muted">date_time:</span> <span className="font-mono">{r.sample_date_time ?? <span className="text-slate-400">null</span>}</span></div>
-                      <div><span className="text-muted">amount:</span> <span className="font-mono">{r.sample_amount ?? <span className="text-slate-400">null</span>}</span></div>
-                      <div><span className="text-muted">total_amount:</span> <span className="font-mono">{r.sample_total_amount ?? <span className="text-slate-400">null</span>}</span></div>
-                      <div className="col-span-2"><span className="text-muted">description:</span> <span className="font-mono">{r.sample_description ?? <span className="text-slate-400">null</span>}</span></div>
-                    </div>
-                    <div className="text-muted mb-0.5">Raw row_data (first 400 chars):</div>
-                    <pre className="font-mono text-[10px] bg-slate-50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">{r.sample_row_data}</pre>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+        <div className="mb-4 flex items-baseline justify-between">
+          <h2 className="text-lg font-semibold text-ink">Competency</h2>
+          <span className="text-xs text-muted">Per-student growth vs. progress · top-right = best</span>
+        </div>
+        {competencyScatter.error ? (
+          <SectionError message={competencyScatter.error} />
         ) : (
-          <div className="overflow-x-auto rounded-lg border bg-white shadow-sm">
-            <table className="text-sm border-collapse">
-              <thead>
-                <tr className="bg-slate-50 text-left">
-                  <th className="px-4 py-2 font-medium text-muted border border-slate-200">Program</th>
-                  {stipendMonths.map((m) => (
-                    <th key={m} className="px-3 py-2 font-medium text-muted border border-slate-200 text-right min-w-[90px]">{m}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {stipendPrograms.map((program) => (
-                  <tr key={program} className="hover:bg-slate-50">
-                    <td className="px-4 py-2 border border-slate-200 font-medium">{program}</td>
-                    {stipendMonths.map((month) => {
-                      const val = stipendMap.get(`${program}|${month}`);
-                      return (
-                        <td key={month} className="px-3 py-2 border border-slate-200 text-right">
-                          {val ? `$${parseFloat(val).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '—'}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {!stipends.error && stipendRows.length > 0 && (
-          <div className="mt-8">
-            <h3 className="text-sm font-medium text-ink mb-2">Stipends by Recipient</h3>
-            {stipendRecipients.error ? (
-              <SectionError message={stipendRecipients.error} />
-            ) : recipientAggs.length === 0 ? (
-              <p className="text-xs text-muted">No recipient data.</p>
-            ) : (
-              <>
-                <p className="text-xs text-muted mb-3">
-                  <span className="text-ink">{stipendMatchedTxns}</span> txns (<span className="text-ink">${stipendMatchedAmt.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>) matched to students;{' '}
-                  <span className="text-amber-700">{stipendUnmatchedTxns}</span> txns (<span className="text-amber-700">${stipendUnmatchedAmt.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>) had an extractable name that didn&apos;t match a student record;{' '}
-                  <span className="text-muted">{stipendAdminTxns}</span> txns (<span className="text-muted">${stipendAdminAmt.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>) had no extractable recipient (admin / funding).
-                </p>
-                <div className="overflow-x-auto rounded-lg border bg-white shadow-sm">
+          <div className="space-y-6">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <CompetencyScatterChart data={scatterChartData} />
+            </div>
+            {competencyAvgs.error ? (
+              <SectionError message={competencyAvgs.error} />
+            ) : competencyRows.length === 0 ? null : (
+              <details className="rounded-xl border border-slate-200 bg-white shadow-sm">
+                <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-ink hover:bg-slate-50">
+                  Show competency averages table
+                </summary>
+                <div className="overflow-x-auto border-t border-slate-200">
                   <table className="w-full text-sm border-collapse">
                     <thead>
                       <tr className="bg-slate-50 text-left">
-                        <th className="px-4 py-2 font-medium text-muted border border-slate-200">Recipient</th>
-                        <th className="px-4 py-2 font-medium text-muted border border-slate-200">Program(s)</th>
-                        <th className="px-4 py-2 font-medium text-muted border border-slate-200 text-right">Txns</th>
-                        <th className="px-4 py-2 font-medium text-muted border border-slate-200 text-right">Total</th>
+                        <th className="px-4 py-2 font-medium text-muted border border-slate-200">Competency</th>
+                        <th className="px-4 py-2 font-medium text-muted border border-slate-200 text-center">Students</th>
+                        <th className="px-4 py-2 font-medium text-muted border border-slate-200 text-center">Avg Performance</th>
+                        <th className="px-4 py-2 font-medium text-muted border border-slate-200 text-center">Avg Growth</th>
+                        <th className="px-4 py-2 font-medium text-muted border border-slate-200 text-center">Avg Progress</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {recipientAggs.map((r) => {
-                        const rowClass = !r.hasExtraction
-                          ? 'bg-slate-50 text-muted'
-                          : !r.matched
-                            ? 'bg-amber-50'
-                            : 'hover:bg-slate-50';
-                        const programs = [...r.programs.keys()].sort().join(', ');
+                      {competencyRows.map((row) => {
+                        const growth = parseFloat(row.avg_growth);
+                        const progress = parseFloat(row.avg_progress);
+                        const flagGrowth = !isNaN(growth) && growth < 0;
+                        const flagProgress = !isNaN(progress) && progress < 75;
+                        const rowFlag = flagGrowth || flagProgress;
                         return (
-                          <tr key={r.label} className={rowClass}>
-                            <td className="px-4 py-2 border border-slate-200">
-                              {r.label}
-                              {r.hasExtraction && !r.matched && (
-                                <span className="ml-2 text-[10px] uppercase tracking-wide text-amber-700">unmatched</span>
-                              )}
+                          <tr key={row.competency} className={rowFlag ? 'bg-red-50' : 'hover:bg-slate-50'}>
+                            <td className="px-4 py-2 border border-slate-200 font-medium">{row.competency}</td>
+                            <td className="px-4 py-2 border border-slate-200 text-center text-muted">{row.student_count}</td>
+                            <td className="px-4 py-2 border border-slate-200 text-center">{row.avg_performance}</td>
+                            <td className={`px-4 py-2 border border-slate-200 text-center ${flagGrowth ? 'text-red-600 font-semibold' : 'text-ink'}`}>
+                              {row.avg_growth}{flagGrowth ? ' ↓' : ''}
                             </td>
-                            <td className="px-4 py-2 border border-slate-200 text-muted text-xs">{programs}</td>
-                            <td className="px-4 py-2 border border-slate-200 text-right">{r.txnCount}</td>
-                            <td className="px-4 py-2 border border-slate-200 text-right font-medium">
-                              ${r.total.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                            <td className={`px-4 py-2 border border-slate-200 text-center ${flagProgress ? 'text-red-600 font-semibold' : 'text-ink'}`}>
+                              {row.avg_progress}%{flagProgress ? ' ⚠' : ''}
                             </td>
                           </tr>
                         );
@@ -759,83 +585,23 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                     </tbody>
                   </table>
                 </div>
-              </>
+              </details>
             )}
           </div>
         )}
       </section>
 
-      {/* Competency */}
+      {/* Competency × Attendance Heatmap */}
       <section>
-        <h2 className="text-lg font-semibold text-ink mb-4">Competency</h2>
-        {competencyAvgs.error ? (
-          <SectionError message={competencyAvgs.error} />
-        ) : competencyRows.length === 0 ? (
-          <p className="text-sm text-muted">No competency data synced yet.</p>
+        <div className="mb-4 flex items-baseline justify-between">
+          <h2 className="text-lg font-semibold text-ink">Competency Growth by Attendance Band</h2>
+          <span className="text-xs text-muted">Does attendance predict growth? Greener = stronger growth</span>
+        </div>
+        {heatmap.error ? (
+          <SectionError message={heatmap.error} />
         ) : (
-          <div className="space-y-6">
-            <div className="overflow-x-auto rounded-lg border bg-white shadow-sm">
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 text-left">
-                    <th className="px-4 py-2 font-medium text-muted border border-slate-200">Competency</th>
-                    <th className="px-4 py-2 font-medium text-muted border border-slate-200 text-center">Students</th>
-                    <th className="px-4 py-2 font-medium text-muted border border-slate-200 text-center">Avg Performance</th>
-                    <th className="px-4 py-2 font-medium text-muted border border-slate-200 text-center">Avg Growth</th>
-                    <th className="px-4 py-2 font-medium text-muted border border-slate-200 text-center">Avg Progress</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {competencyRows.map((row) => {
-                    const growth = parseFloat(row.avg_growth);
-                    const progress = parseFloat(row.avg_progress);
-                    const flagGrowth = !isNaN(growth) && growth < 0;
-                    const flagProgress = !isNaN(progress) && progress < 75;
-                    const rowFlag = flagGrowth || flagProgress;
-                    return (
-                      <tr key={row.competency} className={rowFlag ? 'bg-red-50' : 'hover:bg-slate-50'}>
-                        <td className="px-4 py-2 border border-slate-200 font-medium">{row.competency}</td>
-                        <td className="px-4 py-2 border border-slate-200 text-center text-muted">{row.student_count}</td>
-                        <td className="px-4 py-2 border border-slate-200 text-center">{row.avg_performance}</td>
-                        <td className={`px-4 py-2 border border-slate-200 text-center ${flagGrowth ? 'text-red-600 font-semibold' : 'text-ink'}`}>
-                          {row.avg_growth}{flagGrowth ? ' ↓' : ''}
-                        </td>
-                        <td className={`px-4 py-2 border border-slate-200 text-center ${flagProgress ? 'text-red-600 font-semibold' : 'text-ink'}`}>
-                          {row.avg_progress}%{flagProgress ? ' ⚠' : ''}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            {missedErs.error ? (
-              <SectionError message={missedErs.error} />
-            ) : missedErRows.length > 0 ? (
-              <div>
-                <h3 className="text-sm font-medium text-red-700 mb-2">Students with &gt;1 Missed ER</h3>
-                <div className="overflow-x-auto rounded-lg border bg-white shadow-sm">
-                  <table className="w-full text-sm border-collapse">
-                    <thead>
-                      <tr className="bg-red-50 text-left">
-                        <th className="px-4 py-2 font-medium text-muted border border-slate-200">Student</th>
-                        <th className="px-4 py-2 font-medium text-muted border border-slate-200">Competency</th>
-                        <th className="px-4 py-2 font-medium text-muted border border-slate-200 text-center">Missed ER</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {missedErRows.map((row, i) => (
-                        <tr key={i} className="hover:bg-slate-50">
-                          <td className="px-4 py-2 border border-slate-200">{row.student_name}</td>
-                          <td className="px-4 py-2 border border-slate-200">{row.competency}</td>
-                          <td className="px-4 py-2 border border-slate-200 text-center text-red-600 font-semibold">{Number(row.missed_er)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : null}
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <CompetencyAttendanceHeatmap data={heatmapChartData} />
           </div>
         )}
       </section>
