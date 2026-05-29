@@ -32,11 +32,11 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 10.34.0
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - name: Install dependencies
@@ -48,10 +48,10 @@ jobs:
             -c "CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pg_trgm;"
 
       - name: Generate Prisma client
-        run: pnpm --filter @lp-ai/db generate
+        run: pnpm --filter @lp-ai/lib-db generate
 
       - name: Push schema to test database
-        run: pnpm --filter @lp-ai/db push --skip-generate
+        run: pnpm --filter @lp-ai/lib-db push
 
       - name: Build all packages
         run: pnpm -r build

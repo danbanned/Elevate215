@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { prisma, resolveEntity, getAliases } from '@lp-ai/db';
-import { embedText } from '@lp-ai/embedding';
+import { resolveEntityWithAliases } from '@lp-ai/lib-db';
 
-import { runTool } from '../tool-helpers.js';
+import { runTool, parseStr, parseNum } from '../tool-helpers.js';
 import { toolError } from '../errors.js';
+import { searchDocuments } from './search-documents.js';
 
 const NAME = 'search_by_person';
 
@@ -24,69 +24,43 @@ const inputSchema = {
 
 const MIN_SIMILARITY = 0.7;
 
-interface Row {
-  id: string;
-  source: string;
-  source_id: string;
-  title: string | null;
-  content: string;
-  metadata: unknown;
-  similarity: number;
-}
-
 export function registerSearchByPerson(server: McpServer): void {
   server.registerTool(NAME, { description: DESCRIPTION, inputSchema }, (input) =>
     runTool(NAME, input, async () => {
       const raw = input as Record<string, unknown>;
-      const personName =
-        typeof raw['person_name'] === 'string' ? raw['person_name'] : '';
+      const personName = parseStr(raw, 'person_name') ?? '';
       if (!personName.trim()) {
-        return toolError(
-          'entity_not_found',
-          'person_name is required.',
-        );
+        return toolError('entity_not_found', 'person_name is required.');
       }
-      const query = typeof raw['query'] === 'string' ? raw['query'] : undefined;
-      const topK = Math.min(
-        typeof raw['top_k'] === 'number' ? (raw['top_k'] as number) : 10,
-        20,
-      );
+      const query = parseStr(raw, 'query');
+      const topK = Math.min(parseNum(raw, 'top_k') ?? 10, 20);
 
-      const resolved = await resolveEntity(personName);
-      if (!resolved) {
+      const result = await resolveEntityWithAliases(personName);
+      if (!result) {
         return toolError(
           'entity_not_found',
           `Could not resolve '${personName}' to a known person.`,
         );
       }
 
+      const { resolved, aliases } = result;
       const entityId = resolved.student?.id ?? resolved.staff?.id ?? null;
       if (!entityId) {
         return toolError('entity_not_found', 'Resolved entity has no id.');
       }
 
-      const aliases = await getAliases(entityId);
       const aliasStrings = aliases.map((a) => a.alias.toLowerCase());
 
       const effectiveQuery = query?.trim() ?? personName;
-      const embedding = await embedText(effectiveQuery);
-      const embeddingLiteral = `[${embedding.join(',')}]`;
-
-      const candidateLimit = topK * 5;
-      const rows = await prisma.$queryRaw<Row[]>`
-        SELECT id, source, source_id, title, content, metadata,
-               1 - (embedding <=> ${embeddingLiteral}::vector) AS similarity
-        FROM document_chunks
-        WHERE embedding IS NOT NULL
-          AND 1 - (embedding <=> ${embeddingLiteral}::vector) >= ${MIN_SIMILARITY}
-        ORDER BY embedding <=> ${embeddingLiteral}::vector
-        LIMIT ${candidateLimit}
-      `;
-
-      const filtered = rows.filter((r) => {
-        const text = r.content.toLowerCase();
-        return aliasStrings.some((a) => text.includes(a));
+      const candidates = await searchDocuments({
+        query: effectiveQuery,
+        topK: topK * 5,
+        minSimilarity: MIN_SIMILARITY,
       });
+
+      const filtered = candidates.filter((r) =>
+        aliasStrings.some((a) => r.content.toLowerCase().includes(a)),
+      );
 
       return {
         entity: {

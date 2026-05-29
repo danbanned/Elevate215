@@ -1,4 +1,4 @@
-import { prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,7 +61,7 @@ async function fetchConnectorStatus(): Promise<ConnectorRow[]> {
   );
 }
 
-function StatusBadge({ status }: { status: string | null }): JSX.Element {
+function StatusBadge({ status }: { status: string | null }) {
   if (!status) return <span className="text-muted">never run</span>;
   const cls =
     status === 'ok'
@@ -76,7 +76,7 @@ function StatusBadge({ status }: { status: string | null }): JSX.Element {
   );
 }
 
-export default async function SyncPage(): Promise<JSX.Element> {
+export default async function SyncPage() {
   const rows = await fetchConnectorStatus();
   return (
     <div className="space-y-6">

@@ -1,4 +1,4 @@
-import { prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
 import { getAllSheetRows } from './sheets-client.js';
 
 function snakeCase(s: string): string {

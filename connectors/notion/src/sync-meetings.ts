@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
-import { prisma } from '@lp-ai/db';
-import { embedBatch } from '@lp-ai/embedding';
+import { prisma } from '@lp-ai/lib-db';
+import { embedBatch } from '@lp-ai/lib-embedding';
 import { getPage, queryDatabase } from './notion-client.js';
 import { walkPageBlocks } from './block-walker.js';
 import { chunkText } from './chunker.js';

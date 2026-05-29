@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
 
-import { runTool } from '../tool-helpers.js';
+import { runTool, parseStr } from '../tool-helpers.js';
 
 const NAME = 'get_finance_brief';
 
@@ -20,8 +20,7 @@ export function registerGetFinanceBrief(server: McpServer): void {
   server.registerTool(NAME, { description: DESCRIPTION, inputSchema }, (input) =>
     runTool(NAME, input, async () => {
       const raw = input as Record<string, unknown>;
-      const period =
-        typeof raw['period'] === 'string' ? (raw['period'] as string) : 'ytd';
+      const period = parseStr(raw, 'period') ?? 'ytd';
 
       const [fundBalances, recentGifts] = await Promise.all([
         prisma.financeSnapshot.findMany({

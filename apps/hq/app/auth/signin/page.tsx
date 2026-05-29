@@ -1,6 +1,6 @@
 import { signIn } from '@/auth';
 
-export default function SignInPage(): JSX.Element {
+export default function SignInPage() {
   return (
     <div className="mx-auto max-w-sm rounded-lg border bg-white p-8 shadow-sm">
       <h1 className="text-xl font-semibold text-ink">Sign in</h1>

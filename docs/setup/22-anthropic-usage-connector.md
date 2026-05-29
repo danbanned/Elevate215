@@ -85,8 +85,8 @@ mkdir -p "connectors/anthropic-usage/src"
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@lp-ai/db": "workspace:*",
-    "@lp-ai/config": "workspace:*",
+    "@lp-ai/lib-db": "workspace:*",
+    "@lp-ai/lib-config": "workspace:*",
     "zod": "^3.23.0"
   }
 }

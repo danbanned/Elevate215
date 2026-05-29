@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { prisma, seed } from '@lp-ai/db';
+import { prisma, seed } from '@lp-ai/lib-db';
 
 import { McpStdioClient } from './mcp-client.js';
 
@@ -19,7 +19,7 @@ describeLocal('MCP tool handlers (integration)', () => {
     await prisma.$disconnect();
   });
 
-  it('tools/list exposes all 14 tools', async () => {
+  it('tools/list exposes all 15 tools', async () => {
     const tools = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
@@ -31,6 +31,7 @@ describeLocal('MCP tool handlers (integration)', () => {
         'query_certifications',
         'query_competency',
         'query_donors',
+        'query_employment',
         'query_enrollment',
         'query_finances',
         'query_outcomes',

@@ -1,6 +1,6 @@
 # Phase 6 — Embeddings + pgvector Search
 
-**Goal:** Build the `@lp-ai/embedding` package that wraps OpenAI's `text-embedding-3-large` model, wire it into the Drive connector, and verify cosine-similarity search works against the `document_chunks` table.
+**Goal:** Build the `@lp-ai/lib-embedding` package that wraps OpenAI's `text-embedding-3-large` model, wire it into the Drive connector, and verify cosine-similarity search works against the `document_chunks` table.
 
 **Prerequisites:**
 - Phase 4 complete — `document_chunks` table with `vector(1536)` column exists
@@ -9,7 +9,7 @@
 
 ---
 
-## 1. Scaffold `@lp-ai/embedding`
+## 1. Scaffold `@lp-ai/lib-embedding`
 
 ```bash
 mkdir -p "/Users/christian/Documents/Claude/Projects/LP Internal AI V1/packages/embedding/src"
@@ -18,7 +18,7 @@ mkdir -p "/Users/christian/Documents/Claude/Projects/LP Internal AI V1/packages/
 **`packages/embedding/package.json`:**
 ```json
 {
-  "name": "@lp-ai/embedding",
+  "name": "@lp-ai/lib-embedding",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -86,8 +86,8 @@ export { DIMENSIONS, MODEL };
 Update `connectors/google-drive/src/sync-drive.ts` to embed each chunk after upsert:
 
 ```typescript
-import { embedText } from '@lp-ai/embedding';
-import { prisma } from '@lp-ai/db';
+import { embedText } from '@lp-ai/lib-embedding';
+import { prisma } from '@lp-ai/lib-db';
 
 // After upserting chunk content:
 const embedding = await embedText(chunk.content);
@@ -105,7 +105,7 @@ await prisma.$executeRaw`
 
 **`packages/embedding/src/search.ts`:**
 ```typescript
-import { prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
 import { embedText } from './index.js';
 
 export interface SearchResult {
@@ -185,7 +185,7 @@ node --env-file=../../.env --import tsx packages/embedding/src/test-search.ts
 - [ ] `pnpm sync:drive` now populates `embedding` column (not null)
 - [ ] `SELECT COUNT(*) FROM document_chunks WHERE embedding IS NOT NULL` returns > 0
 - [ ] Test search script returns results with `similarity > 0.7` for relevant queries
-- [ ] `pnpm --filter @lp-ai/embedding build` passes without type errors
+- [ ] `pnpm --filter @lp-ai/lib-embedding build` passes without type errors
 
 ---
 

@@ -1,4 +1,4 @@
-import { prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
 
 // 801 Market St, Philadelphia, PA 19107
 const OFFICE_LAT = 39.9517;

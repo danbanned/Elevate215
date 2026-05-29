@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { prisma } from '@lp-ai/db';
-import type { Prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
+import type { Prisma } from '@lp-ai/lib-db';
 
-import { runTool } from '../tool-helpers.js';
+import { runTool, parseStr, parseNum } from '../tool-helpers.js';
 
 const NAME = 'query_finances';
 
@@ -80,12 +80,10 @@ export function registerQueryFinances(server: McpServer): void {
   server.registerTool(NAME, { description: DESCRIPTION, inputSchema }, (input) =>
     runTool(NAME, input, async () => {
       const raw = input as Record<string, unknown>;
-      const queryType = String(raw['query_type'] ?? '');
-      const tabOverride =
-        typeof raw['tab_name'] === 'string' ? (raw['tab_name'] as string) : undefined;
-      const periodFilter =
-        typeof raw['period'] === 'string' ? (raw['period'] as string) : undefined;
-      const limit = Math.min(typeof raw['limit'] === 'number' ? (raw['limit'] as number) : 500, 1000);
+      const queryType = parseStr(raw, 'query_type') ?? '';
+      const tabOverride = parseStr(raw, 'tab_name');
+      const periodFilter = parseStr(raw, 'period');
+      const limit = Math.min(parseNum(raw, 'limit') ?? 500, 1000);
 
       const where: Prisma.FinanceSnapshotWhereInput = {};
       const mappedTab = QUERY_TYPE_TO_TAB[queryType];

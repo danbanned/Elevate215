@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { prisma, resolveEntity, getAliases } from '@lp-ai/db';
+import { prisma, resolveEntity, getAliases } from '@lp-ai/lib-db';
 
-import { runTool } from '../tool-helpers.js';
+import { runTool, parseStr } from '../tool-helpers.js';
 import { toolError } from '../errors.js';
 
 const NAME = 'get_student_info';
@@ -17,9 +17,8 @@ const inputSchema = {
 export function registerGetStudentInfo(server: McpServer): void {
   server.registerTool(NAME, { description: DESCRIPTION, inputSchema }, (input) =>
     runTool(NAME, input, async () => {
-      const raw = input as { student_name?: unknown };
-      const studentName =
-        typeof raw.student_name === 'string' ? raw.student_name : '';
+      const raw = input as Record<string, unknown>;
+      const studentName = parseStr(raw, 'student_name') ?? '';
       if (!studentName.trim()) {
         return toolError(
           'entity_not_found',

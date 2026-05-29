@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { prisma } from '@lp-ai/db';
-import type { Prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
+import type { Prisma } from '@lp-ai/lib-db';
 
-import { runTool } from '../tool-helpers.js';
+import { runTool, parseStr } from '../tool-helpers.js';
 import { toolError } from '../errors.js';
 
 const NAME = 'query_donors';
@@ -23,9 +23,8 @@ export function registerQueryDonors(server: McpServer): void {
   server.registerTool(NAME, { description: DESCRIPTION, inputSchema }, (input) =>
     runTool(NAME, input, async () => {
       const raw = input as Record<string, unknown>;
-      const queryType = String(raw['query_type'] ?? 'list');
-      const donorName =
-        typeof raw['donor_name'] === 'string' ? (raw['donor_name'] as string) : undefined;
+      const queryType = parseStr(raw, 'query_type') ?? 'list';
+      const donorName = parseStr(raw, 'donor_name');
 
       if (queryType === 'summary') {
         const totalDonors = await prisma.donorContact.count();

@@ -1,6 +1,6 @@
 # Phase 3 — AWS Secrets Manager + Config Package
 
-**Goal:** Store all credentials in Secrets Manager, then build the `@lp-ai/config` package so every app and connector loads secrets the same way — Secrets Manager in production, `.env` file locally.
+**Goal:** Store all credentials in Secrets Manager, then build the `@lp-ai/lib-config` package so every app and connector loads secrets the same way — Secrets Manager in production, `.env` file locally.
 
 **Prerequisites:**
 - Phase 1 complete — AWS CLI configured
@@ -109,7 +109,7 @@ aws secretsmanager put-secret-value \
 
 ---
 
-## 3. Build the `@lp-ai/config` package
+## 3. Build the `@lp-ai/lib-config` package
 
 ```bash
 mkdir -p "/Users/christian/Documents/Claude/Projects/LP Internal AI V1/packages/config/src"
@@ -119,7 +119,7 @@ Create `packages/config/package.json`:
 
 ```json
 {
-  "name": "@lp-ai/config",
+  "name": "@lp-ai/lib-config",
   "version": "1.0.0",
   "private": true,
   "type": "module",

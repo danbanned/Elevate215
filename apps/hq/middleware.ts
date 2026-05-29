@@ -1,7 +1,10 @@
-import { auth } from '@/auth';
+import NextAuth from 'next-auth';
+import authConfig from './auth.config';
 import { NextResponse } from 'next/server';
 
-const PUBLIC_PATHS = ['/auth/signin', '/api/auth', '/api/health'];
+const PUBLIC_PATHS = ['/auth/signin', '/api/auth', '/api/health', '/aws-jobs', '/api/aws-jobs'];
+
+const { auth } = NextAuth(authConfig);
 
 export default auth((req) => {
   const path = req.nextUrl.pathname;

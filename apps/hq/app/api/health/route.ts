@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
 
 export const dynamic = 'force-dynamic';
 

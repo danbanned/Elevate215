@@ -1,4 +1,4 @@
-import { prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
 
 export interface UsageLogInput {
   toolName: string;

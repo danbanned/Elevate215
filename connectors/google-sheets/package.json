@@ -11,8 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@lp-ai/config": "workspace:*",
-    "@lp-ai/db": "workspace:*",
+    "@lp-ai/lib-config": "workspace:*",
+    "@lp-ai/lib-db": "workspace:*",
     "dotenv": "^16.4.5",
     "googleapis": "^140.0.1",
     "zod": "^3.23.0"

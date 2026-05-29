@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { prisma } from '@lp-ai/db';
-import type { Prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
+import type { Prisma } from '@lp-ai/lib-db';
 
-import { runTool } from '../tool-helpers.js';
+import { runTool, parseStr } from '../tool-helpers.js';
 
 const NAME = 'query_competency';
 
@@ -20,15 +20,9 @@ export function registerQueryCompetency(server: McpServer): void {
   server.registerTool(NAME, { description: DESCRIPTION, inputSchema }, (input) =>
     runTool(NAME, input, async () => {
       const raw = input as Record<string, unknown>;
-      const queryType = String(raw['query_type'] ?? 'scores');
-      const studentNumber =
-        typeof raw['student_number'] === 'string'
-          ? (raw['student_number'] as string)
-          : undefined;
-      const competency =
-        typeof raw['competency'] === 'string'
-          ? (raw['competency'] as string)
-          : undefined;
+      const queryType = parseStr(raw, 'query_type') ?? 'scores';
+      const studentNumber = parseStr(raw, 'student_number');
+      const competency = parseStr(raw, 'competency');
 
       if (queryType === 'rubric') {
         const rubric = await prisma.financeSnapshot.findMany({

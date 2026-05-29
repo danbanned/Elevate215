@@ -1,5 +1,5 @@
 {
-  "name": "@lp-ai/db",
+  "name": "@lp-ai/lib-db",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -12,20 +12,24 @@
     }
   },
   "scripts": {
-    "generate": "prisma generate",
-    "migrate": "prisma migrate deploy",
-    "migrate:dev": "prisma migrate dev",
-    "push": "prisma db push",
-    "studio": "prisma studio",
+    "generate": "prisma generate --config ../../prisma.config.ts",
+    "migrate": "prisma migrate deploy --config ../../prisma.config.ts",
+    "migrate:dev": "prisma migrate dev --config ../../prisma.config.ts",
+    "push": "prisma db push --config ../../prisma.config.ts",
+    "studio": "prisma studio --config ../../prisma.config.ts",
     "seed": "node --env-file=../../.env dist/seed-cli.js",
     "build": "tsc",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@prisma/client": "^5.15.0"
+    "@prisma/client": "^7.0.0",
+    "@prisma/client-runtime-utils": "^7.0.0",
+    "@prisma/adapter-pg": "^7.0.0",
+    "pg": "^8.12.0"
   },
   "devDependencies": {
-    "prisma": "^5.15.0",
-    "typescript": "^5.4.5"
+    "prisma": "^7.0.0",
+    "typescript": "^5.4.5",
+    "@types/pg": "^8.11.0"
   }
 }

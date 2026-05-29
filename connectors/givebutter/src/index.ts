@@ -1,5 +1,5 @@
-import { loadEnv } from '@lp-ai/config';
-import { prisma, runSync, type SyncRunRecord } from '@lp-ai/db';
+import { loadEnv } from '@lp-ai/lib-config';
+import { prisma, runSync, type SyncRunRecord } from '@lp-ai/lib-db';
 
 import {
   createGivebutterClient,

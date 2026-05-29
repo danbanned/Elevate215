@@ -73,7 +73,7 @@ Athena reads from S3, not directly from Postgres. Set up a nightly export job th
 Create a Lambda or App Runner endpoint for the export:
 
 ```typescript
-import { prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
 const s3 = new S3Client({ region: 'us-east-1' });

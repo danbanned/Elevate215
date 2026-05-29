@@ -3,7 +3,7 @@
 **Goal:** Build a Slack → pgvector connector that ingests messages from designated channels, embeds them with OpenAI, and stores them in `document_chunks` so the `search_conversations` MCP tool can surface them.
 
 **Prerequisites:**
-- Phase 6 complete — `@lp-ai/embedding` package built, `document_chunks` table ready
+- Phase 6 complete — `@lp-ai/lib-embedding` package built, `document_chunks` table ready
 - Phase 3 complete — `SLACK_BOT_TOKEN` in Secrets Manager
 - Slack workspace admin access to create an app
 
@@ -67,9 +67,9 @@ mkdir -p "/Users/christian/Documents/Claude/Projects/LP Internal AI V1/connector
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@lp-ai/db": "workspace:*",
-    "@lp-ai/config": "workspace:*",
-    "@lp-ai/embedding": "workspace:*",
+    "@lp-ai/lib-db": "workspace:*",
+    "@lp-ai/lib-config": "workspace:*",
+    "@lp-ai/lib-embedding": "workspace:*",
     "@slack/web-api": "^7.0.0",
     "zod": "^3.23.0"
   }
@@ -82,8 +82,8 @@ mkdir -p "/Users/christian/Documents/Claude/Projects/LP Internal AI V1/connector
 
 ```typescript
 import { WebClient } from '@slack/web-api';
-import { embedText } from '@lp-ai/embedding';
-import { prisma } from '@lp-ai/db';
+import { embedText } from '@lp-ai/lib-embedding';
+import { prisma } from '@lp-ai/lib-db';
 
 const slack = new WebClient(process.env['SLACK_BOT_TOKEN']);
 

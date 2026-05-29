@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { prisma } from '@lp-ai/db';
-import type { Prisma, StudentEmployment } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
+import type { Prisma, StudentEmployment } from '@lp-ai/lib-db';
 
 import { runTool } from '../tool-helpers.js';
 

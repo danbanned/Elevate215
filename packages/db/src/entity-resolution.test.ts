@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { prisma } from './index.js';
+import { prisma } from './client.js';
 import {
   getAliases,
   linkAlias,
@@ -18,6 +18,7 @@ describeLocal('entity resolution (live local Postgres)', () => {
   beforeEach(async () => {
     await prisma.entityAlias.deleteMany({});
     await prisma.pendingAlias.deleteMany({});
+    await prisma.studentEmployment.deleteMany({});
     await prisma.student.deleteMany({});
     await prisma.staff.deleteMany({});
   });

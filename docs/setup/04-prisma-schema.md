@@ -1,6 +1,6 @@
 # Phase 4 — Prisma Schema
 
-**Goal:** Set up the `@lp-ai/db` package with a Prisma schema that ports every table from V0, adds the `document_chunks` pgvector table, and runs the first migration against RDS.
+**Goal:** Set up the `@lp-ai/lib-db` package with a Prisma schema that ports every table from V0, adds the `document_chunks` pgvector table, and runs the first migration against RDS.
 
 **Prerequisites:**
 - Phase 2 complete — RDS running, `DATABASE_URL` in `.env`
@@ -9,7 +9,7 @@
 
 ---
 
-## 1. Scaffold the `@lp-ai/db` package
+## 1. Scaffold the `@lp-ai/lib-db` package
 
 ```bash
 mkdir -p "/Users/christian/Documents/Claude/Projects/LP Internal AI V1/packages/db/prisma"
@@ -21,7 +21,7 @@ Create `packages/db/package.json`:
 
 ```json
 {
-  "name": "@lp-ai/db",
+  "name": "@lp-ai/lib-db",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -332,7 +332,7 @@ export type { Prisma } from '@prisma/client';
 ```bash
 cd "/Users/christian/Documents/Claude/Projects/LP Internal AI V1"
 pnpm install
-pnpm --filter @lp-ai/db migrate:dev -- --name init
+pnpm --filter @lp-ai/lib-db migrate:dev -- --name init
 ```
 
 This creates the tables in RDS and generates the Prisma client.
@@ -354,7 +354,7 @@ Opens at `http://localhost:5555`. Confirm all tables are visible.
 - [ ] `pnpm db:migrate:dev` completes without errors
 - [ ] All 17 tables visible in Prisma Studio
 - [ ] `document_chunks` table has an `embedding` column of type `vector(1536)`
-- [ ] `pnpm --filter @lp-ai/db build` produces `dist/` without type errors
+- [ ] `pnpm --filter @lp-ai/lib-db build` produces `dist/` without type errors
 
 ---
 

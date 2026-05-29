@@ -1,4 +1,4 @@
-import { prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
 import { getSheetRows } from './sheets-client.js';
 
 const LABEL_COL_IDX = 16;

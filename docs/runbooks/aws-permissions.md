@@ -50,7 +50,7 @@ Trivial but required: `sts:GetCallerIdentity`. Included in nearly every managed 
 
 ### 2.4 Secrets Manager (Phase 3)
 
-**Why:** production secrets for `DATABASE_URL`, all connector API keys (GiveButter, Aplos, Slack, Roam, OpenAI, Anthropic), NextAuth secrets, Sentry DSN. `@lp-ai/config` already has the fetch path stubbed.
+**Why:** production secrets for `DATABASE_URL`, all connector API keys (GiveButter, Aplos, Slack, Roam, OpenAI, Anthropic), NextAuth secrets, Sentry DSN. `@lp-ai/lib-config` already has the fetch path stubbed.
 
 **Builder grants:** `SecretsManagerReadWrite` (managed) — create/update/tag/rotate.
 

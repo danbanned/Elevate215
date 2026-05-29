@@ -29,9 +29,9 @@ mkdir -p "/Users/christian/Documents/Claude/Projects/LP Internal AI V1/apps/mcp-
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@lp-ai/db": "workspace:*",
-    "@lp-ai/config": "workspace:*",
-    "@lp-ai/embedding": "workspace:*",
+    "@lp-ai/lib-db": "workspace:*",
+    "@lp-ai/lib-config": "workspace:*",
+    "@lp-ai/lib-embedding": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "zod": "^3.23.0"
   },

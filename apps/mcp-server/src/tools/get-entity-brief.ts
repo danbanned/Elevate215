@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { prisma, resolveEntity, getAliases } from '@lp-ai/db';
+import { prisma, resolveEntity, getAliases } from '@lp-ai/lib-db';
 
-import { runTool } from '../tool-helpers.js';
+import { runTool, parseStr } from '../tool-helpers.js';
 import { toolError } from '../errors.js';
 
 const NAME = 'get_entity_brief';
@@ -23,8 +23,7 @@ export function registerGetEntityBrief(server: McpServer): void {
   server.registerTool(NAME, { description: DESCRIPTION, inputSchema }, (input) =>
     runTool(NAME, input, async () => {
       const raw = input as Record<string, unknown>;
-      const personName =
-        typeof raw['person_name'] === 'string' ? raw['person_name'] : '';
+      const personName = parseStr(raw, 'person_name') ?? '';
       if (!personName.trim()) {
         return toolError('entity_not_found', 'person_name is required.');
       }

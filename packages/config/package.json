@@ -1,5 +1,5 @@
 {
-  "name": "@lp-ai/config",
+  "name": "@lp-ai/lib-config",
   "version": "1.0.0",
   "private": true,
   "type": "module",

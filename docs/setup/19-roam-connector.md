@@ -3,7 +3,7 @@
 **Goal:** Build a Roam → pgvector connector. This phase begins with API research since Roam's access model needs to be confirmed before any code is written.
 
 **Prerequisites:**
-- Phase 6 complete — `@lp-ai/embedding` and `document_chunks` ready
+- Phase 6 complete — `@lp-ai/lib-embedding` and `document_chunks` ready
 - Phase 18 complete — Slack connector pattern established (Roam follows the same approach)
 - Roam account access + admin permissions
 
@@ -77,9 +77,9 @@ If Roam exposes a REST API, follow the Slack connector pattern exactly:
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@lp-ai/db": "workspace:*",
-    "@lp-ai/config": "workspace:*",
-    "@lp-ai/embedding": "workspace:*",
+    "@lp-ai/lib-db": "workspace:*",
+    "@lp-ai/lib-config": "workspace:*",
+    "@lp-ai/lib-embedding": "workspace:*",
     "zod": "^3.23.0"
   }
 }
@@ -87,8 +87,8 @@ If Roam exposes a REST API, follow the Slack connector pattern exactly:
 
 ```typescript
 // connectors/roam/src/index.ts
-import { embedText } from '@lp-ai/embedding';
-import { prisma } from '@lp-ai/db';
+import { embedText } from '@lp-ai/lib-embedding';
+import { prisma } from '@lp-ai/lib-db';
 
 const API_KEY = process.env['ROAM_API_KEY'];
 const GRAPH = process.env['ROAM_GRAPH_NAME'];

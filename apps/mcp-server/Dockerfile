@@ -3,12 +3,13 @@
 #   docker build -f apps/mcp-server/Dockerfile -t lp-mcp .
 
 # ----- deps -------------------------------------------------------------------
-FROM node:20-bookworm-slim AS deps
-RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
+FROM node:22-bookworm-slim AS deps
+RUN corepack enable && corepack prepare pnpm@10.34.0 --activate
 WORKDIR /workspace
 
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY tsconfig.base.json eslint.config.mjs ./
+COPY apps/aws-mcp-server/package.json apps/aws-mcp-server/package.json
 COPY apps/hq/package.json apps/hq/package.json
 COPY apps/mcp-server/package.json apps/mcp-server/package.json
 COPY packages/config/package.json packages/config/package.json
@@ -25,24 +26,24 @@ COPY connectors/slack/package.json connectors/slack/package.json
 RUN pnpm install --frozen-lockfile
 
 # ----- builder ----------------------------------------------------------------
-FROM node:20-bookworm-slim AS builder
-RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
+FROM node:22-bookworm-slim AS builder
+RUN corepack enable && corepack prepare pnpm@10.34.0 --activate
 WORKDIR /workspace
 
 COPY --from=deps /workspace/node_modules ./node_modules
 COPY . .
 RUN pnpm install --frozen-lockfile --offline
 
-RUN pnpm --filter @lp-ai/db generate
-RUN pnpm --filter @lp-ai/config build
-RUN pnpm --filter @lp-ai/db build
-RUN pnpm --filter @lp-ai/embedding build
+RUN DATABASE_URL="postgresql://placeholder" pnpm --filter @lp-ai/lib-db generate
+RUN pnpm --filter @lp-ai/lib-config build
+RUN pnpm --filter @lp-ai/lib-db build
+RUN pnpm --filter @lp-ai/lib-embedding build
 RUN pnpm --filter @lp-ai/mcp-server build
 
 # ----- runner -----------------------------------------------------------------
 # Carries the full workspace (built dist + node_modules with Prisma engines)
 # so the generated client and pnpm symlinks remain intact at runtime.
-FROM node:20-bookworm-slim AS runner
+FROM node:22-bookworm-slim AS runner
 WORKDIR /workspace
 ENV NODE_ENV=production
 ENV PORT=8080

@@ -1,5 +1,5 @@
 {
-  "name": "@lp-ai/embedding",
+  "name": "@lp-ai/lib-embedding",
   "version": "1.0.0",
   "private": true,
   "type": "module",

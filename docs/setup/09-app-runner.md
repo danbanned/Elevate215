@@ -29,7 +29,7 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN pnpm --filter @lp-ai/db generate
+RUN pnpm --filter @lp-ai/lib-db generate
 RUN pnpm --filter @lp-ai/hq build
 
 FROM base AS runner
@@ -62,7 +62,7 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN pnpm --filter @lp-ai/db generate
+RUN pnpm --filter @lp-ai/lib-db generate
 RUN pnpm --filter @lp-ai/mcp-server build
 
 FROM node:20-alpine AS runner

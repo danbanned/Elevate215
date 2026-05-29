@@ -2,11 +2,12 @@ generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["postgresqlExtensions"]
   binaryTargets   = ["native", "debian-openssl-3.0.x", "linux-arm64-openssl-3.0.x"]
+  engineType      = "library"
+  output          = "../generated/prisma"
 }
 
 datasource db {
   provider   = "postgresql"
-  url        = env("DATABASE_URL")
   extensions = [vector, pg_trgm]
 }
 
@@ -438,3 +439,22 @@ model VerificationToken {
   @@unique([identifier, token])
   @@map("verification_tokens")
 }
+
+model AwsResourceJob {
+  id           String    @id @default(uuid())
+  developer    String    @map("developer")
+  actionType   String    @map("action_type")     // CREATE, UPDATE, DELETE
+  resourceType String    @map("resource_type")   // e.g. AWS::S3::Bucket, terraform
+  parameters   Json      @map("parameters")      // Inputs / TF code / variables
+  planOutput   String?   @map("plan_output")     // Plan / Dry-run details
+  status       String    @map("status")          // PENDING_APPROVAL, APPROVED, REJECTED, IN_PROGRESS, SUCCEEDED, FAILED
+  error        String?   @map("error")
+  approver     String?   @map("approver")        // Approver email
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@index([developer])
+  @@index([status])
+  @@map("aws_resource_jobs")
+}
+

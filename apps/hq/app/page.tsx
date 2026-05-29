@@ -1,4 +1,4 @@
-import { prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
 import { TokenUsageDateFilter } from './components/TokenUsageDateFilter';
 
 export const dynamic = 'force-dynamic';

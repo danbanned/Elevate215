@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { prisma } from '@lp-ai/db';
-import { embedText } from '@lp-ai/embedding';
+import { prisma } from '@lp-ai/lib-db';
+import { embedText } from '@lp-ai/lib-embedding';
 
-import { runTool } from '../tool-helpers.js';
+import { runTool, parseStr, parseNum } from '../tool-helpers.js';
 import { toolError } from '../errors.js';
 
 const NAME = 'search_documents';
@@ -21,7 +21,7 @@ const inputSchema = {
   min_similarity: z.number().optional(),
 };
 
-interface SearchRow {
+export interface SearchRow {
   id: string;
   source: string;
   source_id: string;
@@ -34,6 +34,7 @@ interface SearchRow {
 export async function searchDocuments(params: {
   query: string;
   source?: string;
+  sources?: string[];
   topK?: number;
   minSimilarity?: number;
 }): Promise<SearchRow[]> {
@@ -41,6 +42,19 @@ export async function searchDocuments(params: {
   const minSim = params.minSimilarity ?? 0.7;
   const embedding = await embedText(params.query);
   const embeddingLiteral = `[${embedding.join(',')}]`;
+
+  if (params.sources && params.sources.length > 0) {
+    return prisma.$queryRaw<SearchRow[]>`
+      SELECT id, source, source_id, title, content, metadata,
+             1 - (embedding <=> ${embeddingLiteral}::vector) AS similarity
+      FROM document_chunks
+      WHERE embedding IS NOT NULL
+        AND source = ANY(${params.sources}::text[])
+        AND 1 - (embedding <=> ${embeddingLiteral}::vector) >= ${minSim}
+      ORDER BY embedding <=> ${embeddingLiteral}::vector
+      LIMIT ${topK}
+    `;
+  }
 
   if (params.source) {
     return prisma.$queryRaw<SearchRow[]>`
@@ -54,6 +68,7 @@ export async function searchDocuments(params: {
       LIMIT ${topK}
     `;
   }
+
   return prisma.$queryRaw<SearchRow[]>`
     SELECT id, source, source_id, title, content, metadata,
            1 - (embedding <=> ${embeddingLiteral}::vector) AS similarity
@@ -69,14 +84,13 @@ export function registerSearchDocuments(server: McpServer): void {
   server.registerTool(NAME, { description: DESCRIPTION, inputSchema }, (input) =>
     runTool(NAME, input, async () => {
       const raw = input as Record<string, unknown>;
-      const query = typeof raw['query'] === 'string' ? raw['query'] : '';
+      const query = parseStr(raw, 'query') ?? '';
       if (!query.trim()) {
         return toolError('search_failed', 'query is required.');
       }
-      const source = typeof raw['source'] === 'string' ? raw['source'] : undefined;
-      const topK = typeof raw['top_k'] === 'number' ? raw['top_k'] : undefined;
-      const minSimilarity =
-        typeof raw['min_similarity'] === 'number' ? raw['min_similarity'] : undefined;
+      const source = parseStr(raw, 'source');
+      const topK = parseNum(raw, 'top_k');
+      const minSimilarity = parseNum(raw, 'min_similarity');
 
       const rows = await searchDocuments({
         query,

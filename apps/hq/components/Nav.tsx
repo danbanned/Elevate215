@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { auth, signIn, signOut } from '@/auth';
 
-export async function Nav(): Promise<JSX.Element> {
+export async function Nav() {
   const session = await auth();
 
   return (

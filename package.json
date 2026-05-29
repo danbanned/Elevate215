@@ -3,13 +3,13 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "db:generate": "pnpm --filter @lp-ai/db generate",
-    "db:migrate": "pnpm --filter @lp-ai/db migrate",
-    "db:studio": "pnpm --filter @lp-ai/db studio",
-    "db:push": "pnpm --filter @lp-ai/db push",
+    "db:generate": "pnpm --filter @lp-ai/lib-db generate",
+    "db:migrate": "pnpm --filter @lp-ai/lib-db migrate",
+    "db:studio": "pnpm --filter @lp-ai/lib-db studio",
+    "db:push": "pnpm --filter @lp-ai/lib-db push",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
-    "db:seed": "pnpm --filter @lp-ai/db seed",
+    "db:seed": "pnpm --filter @lp-ai/lib-db seed",
     "sync:sheets": "pnpm --filter @lp-ai/connector-google-sheets sync",
     "sync:drive": "pnpm --filter @lp-ai/connector-google-drive sync",
     "sync:bigquery": "pnpm --filter @lp-ai/connector-bigquery sync",
@@ -17,6 +17,7 @@
     "sync:aplos": "pnpm --filter @lp-ai/connector-aplos sync",
     "sync:slack": "pnpm --filter @lp-ai/connector-slack sync",
     "sync:roam": "pnpm --filter @lp-ai/connector-roam sync",
+    "sync:all": "pnpm --filter \"@lp-ai/connector-*\" --parallel sync",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
@@ -24,16 +25,17 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
-    "@types/node": "^20.14.0",
-    "typescript": "^5.4.5",
+    "@types/node": "^22",
+    "dotenv": "^16.4.5",
     "eslint": "^9.0.0",
     "prettier": "^3.3.0",
-    "vitest": "^2.0.0",
-    "dotenv": "^16.4.5"
+    "prisma": "^7.8.0",
+    "typescript": "^5.4.5",
+    "vitest": "^2.0.0"
   },
   "engines": {
-    "node": ">=20",
-    "pnpm": ">=9"
+    "node": ">=22",
+    "pnpm": ">=10"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

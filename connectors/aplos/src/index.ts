@@ -1,4 +1,4 @@
-import { runSync, type SyncRunRecord } from '@lp-ai/db';
+import { runSync, type SyncRunRecord } from '@lp-ai/lib-db';
 import { syncAccounts } from './sync-accounts.js';
 import { syncFunds } from './sync-funds.js';
 import { syncTransactions } from './sync-transactions.js';

@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { prisma, resolveEntity } from '@lp-ai/db';
+import { prisma, resolveEntity } from '@lp-ai/lib-db';
 
-import { runTool } from '../tool-helpers.js';
+import { runTool, parseStr } from '../tool-helpers.js';
 import { toolError } from '../errors.js';
 
 const NAME = 'query_outcomes';
@@ -24,11 +24,9 @@ const inputSchema = {
 export function registerQueryOutcomes(server: McpServer): void {
   server.registerTool(NAME, { description: DESCRIPTION, inputSchema }, (input) =>
     runTool(NAME, input, async () => {
-      const raw = input as { student_name?: unknown; competency?: unknown };
-      const studentName =
-        typeof raw.student_name === 'string' ? raw.student_name : '';
-      const competency =
-        typeof raw.competency === 'string' ? raw.competency : undefined;
+      const raw = input as Record<string, unknown>;
+      const studentName = parseStr(raw, 'student_name') ?? '';
+      const competency = parseStr(raw, 'competency');
 
       if (!studentName.trim()) {
         return toolError(

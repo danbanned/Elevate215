@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { prisma } from '@lp-ai/db';
-import type { Prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
+import type { Prisma } from '@lp-ai/lib-db';
 
-import { runTool } from '../tool-helpers.js';
+import { runTool, parseStr } from '../tool-helpers.js';
 
 const NAME = 'query_certifications';
 
@@ -23,17 +23,12 @@ export function registerQueryCertifications(server: McpServer): void {
   server.registerTool(NAME, { description: DESCRIPTION, inputSchema }, (input) =>
     runTool(NAME, input, async () => {
       const raw = input as Record<string, unknown>;
-      const queryType = String(raw['query_type'] ?? '');
-      const typeFilter =
-        typeof raw['type'] === 'string' ? (raw['type'] as string) : undefined;
-      const phaseFilter =
-        typeof raw['phase'] === 'string' ? (raw['phase'] as string) : undefined;
-      const resultFilter =
-        typeof raw['result'] === 'string' ? (raw['result'] as string) : undefined;
-      const startDate =
-        typeof raw['start_date'] === 'string' ? (raw['start_date'] as string) : undefined;
-      const endDate =
-        typeof raw['end_date'] === 'string' ? (raw['end_date'] as string) : undefined;
+      const queryType = parseStr(raw, 'query_type') ?? '';
+      const typeFilter = parseStr(raw, 'type');
+      const phaseFilter = parseStr(raw, 'phase');
+      const resultFilter = parseStr(raw, 'result');
+      const startDate = parseStr(raw, 'start_date');
+      const endDate = parseStr(raw, 'end_date');
 
       const where: Prisma.StudentCertificationWhereInput = {};
       if (typeFilter) where.type = { contains: typeFilter, mode: 'insensitive' };

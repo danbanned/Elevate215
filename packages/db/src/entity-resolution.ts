@@ -1,5 +1,5 @@
-import { prisma } from './index.js';
-import type { Student, Staff, EntityAlias } from '@prisma/client';
+import { prisma } from './client.js';
+import type { Student, Staff, EntityAlias } from '../generated/prisma/index.js';
 
 export type EntityType = 'student' | 'staff';
 
@@ -78,6 +78,17 @@ export async function getAliases(entityId: string): Promise<EntityAlias[]> {
     where: { OR: [{ studentId: entityId }, { staffId: entityId }] },
     orderBy: [{ confidence: 'desc' }, { createdAt: 'asc' }],
   });
+}
+
+export async function resolveEntityWithAliases(
+  rawAlias: string,
+  options?: ResolveOptions,
+): Promise<{ resolved: ResolvedEntity; aliases: EntityAlias[] } | null> {
+  const resolved = await resolveEntity(rawAlias, options);
+  if (!resolved) return null;
+  const entityId = resolved.student?.id ?? resolved.staff?.id ?? null;
+  const aliases = entityId ? await getAliases(entityId) : [];
+  return { resolved, aliases };
 }
 
 export async function linkAlias(params: {

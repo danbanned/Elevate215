@@ -65,8 +65,8 @@ mkdir -p "/Users/christian/Documents/Claude/Projects/LP Internal AI V1/connector
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@lp-ai/db": "workspace:*",
-    "@lp-ai/config": "workspace:*",
+    "@lp-ai/lib-db": "workspace:*",
+    "@lp-ai/lib-config": "workspace:*",
     "zod": "^3.23.0"
   },
   "devDependencies": {

@@ -41,8 +41,8 @@ Update `apps/hq/package.json` to add workspace dependencies:
 ```json
 {
   "dependencies": {
-    "@lp-ai/db": "workspace:*",
-    "@lp-ai/config": "workspace:*",
+    "@lp-ai/lib-db": "workspace:*",
+    "@lp-ai/lib-config": "workspace:*",
     "next-auth": "^5.0.0-beta",
     "@auth/prisma-adapter": "^2.0.0"
   }
@@ -75,7 +75,7 @@ pnpm dlx shadcn@latest add card table badge button skeleton
 import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
 import { PrismaAdapter } from '@auth/prisma-adapter';
-import { prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
 
 const ALLOWED_DOMAIN = process.env['AUTH_ALLOWED_DOMAIN'] ?? 'launchpadphilly.org';
 
@@ -120,7 +120,7 @@ The health endpoint is critical for App Runner:
 **`apps/hq/app/api/health/route.ts`:**
 ```typescript
 import { NextResponse } from 'next/server';
-import { prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
 
 export async function GET(): Promise<NextResponse> {
   await prisma.$queryRaw`SELECT 1`;

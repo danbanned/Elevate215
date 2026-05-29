@@ -22,7 +22,7 @@ cp .env.example .env   # only if .env is missing
 
 # 4. Apply the schema to the local DB (uses prisma db push, non-interactive)
 pnpm db:generate
-pnpm --filter @lp-ai/db push --skip-generate
+pnpm --filter @lp-ai/lib-db push
 
 # 5. Seed sample data (3 students, donors, certifications, finance)
 pnpm db:seed
@@ -37,6 +37,20 @@ pnpm test                   # 28 tests; entity-resolution + MCP integration suit
 ### HQ dashboard
 ```bash
 pnpm --filter @lp-ai/hq dev          # http://localhost:3000
+```
+
+If HQ logs `MissingSecret` or Prisma attempts to connect with mock credentials, start HQ with explicit local env vars:
+
+```bash
+AUTH_SECRET=local-dev-secret-not-for-production-use-only \
+DATABASE_URL='postgresql://lpapp:lpapp@localhost:5433/lpinternal?sslmode=disable' \
+pnpm --filter @lp-ai/hq dev
+```
+
+Then validate:
+
+```bash
+curl http://localhost:3000/api/health
 ```
 
 The dashboard reads from local Postgres. Sign-in is gated by Google OAuth + domain check; the middleware will redirect you to `/auth/signin`. For local dev you can either:
@@ -127,11 +141,11 @@ docker run --rm -p 8091:8080 \
 
 | Task | Command |
 |---|---|
-| Reset local DB | `pnpm db:down && pnpm db:up && pnpm --filter @lp-ai/db push --skip-generate && pnpm db:seed` |
+| Reset local DB | `pnpm db:down && pnpm db:up && pnpm --filter @lp-ai/lib-db push && pnpm db:seed` |
 | Open Prisma Studio (GUI) | `pnpm db:studio` |
 | Tail Postgres logs | `docker logs -f lp-internal-postgres` |
 | Run a single test file | `pnpm test --run packages/db/src/entity-resolution.test.ts` |
-| Rebuild Prisma client after schema change | `pnpm db:generate` then `pnpm --filter @lp-ai/db push --skip-generate` |
+| Rebuild Prisma client after schema change | `pnpm db:generate` then `pnpm --filter @lp-ai/lib-db push` |
 
 ## Known things that won't work without credentials
 

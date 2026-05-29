@@ -10,12 +10,13 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "start:http": "node dist/serve-http.js",
+    "start:bridge": "node dist/bridge.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@lp-ai/config": "workspace:*",
-    "@lp-ai/db": "workspace:*",
-    "@lp-ai/embedding": "workspace:*",
+    "@lp-ai/lib-config": "workspace:*",
+    "@lp-ai/lib-db": "workspace:*",
+    "@lp-ai/lib-embedding": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "zod": "^3.23.0"
   },

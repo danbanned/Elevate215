@@ -43,8 +43,8 @@ mkdir -p "/Users/christian/Documents/Claude/Projects/LP Internal AI V1/connector
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@lp-ai/db": "workspace:*",
-    "@lp-ai/config": "workspace:*",
+    "@lp-ai/lib-db": "workspace:*",
+    "@lp-ai/lib-config": "workspace:*",
     "zod": "^3.23.0"
   },
   "devDependencies": {
@@ -75,7 +75,7 @@ GET /plans             → recurring giving plans
 
 **`connectors/givebutter/src/index.ts`:**
 ```typescript
-import { prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
 
 const API_KEY = process.env['GIVEBUTTER_API_KEY'];
 const BASE_URL = 'https://api.givebutter.com/v1';

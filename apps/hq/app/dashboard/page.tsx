@@ -1,4 +1,4 @@
-import { prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
 import { AttendanceTrendChart, type AttendanceTrendPoint } from './charts/AttendanceTrendChart';
 import { CohortCompletionChart, type CohortCompletionPoint } from './charts/CohortCompletionChart';
 import { CompetencyAttendanceHeatmap, type HeatmapCell } from './charts/CompetencyAttendanceHeatmap';

@@ -80,8 +80,8 @@ mkdir -p "/Users/christian/Documents/Claude/Projects/LP Internal AI V1/connector
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@lp-ai/db": "workspace:*",
-    "@lp-ai/config": "workspace:*",
+    "@lp-ai/lib-db": "workspace:*",
+    "@lp-ai/lib-config": "workspace:*",
     "@google-cloud/bigquery": "^7.0.0",
     "zod": "^3.23.0"
   }
@@ -94,7 +94,7 @@ mkdir -p "/Users/christian/Documents/Claude/Projects/LP Internal AI V1/connector
 
 ```typescript
 import { BigQuery } from '@google-cloud/bigquery';
-import { prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
 
 const bigquery = new BigQuery({
   projectId: process.env['BIGQUERY_PROJECT_ID'],

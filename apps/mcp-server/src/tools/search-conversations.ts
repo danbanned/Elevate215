@@ -1,10 +1,9 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { prisma } from '@lp-ai/db';
-import { embedText } from '@lp-ai/embedding';
 
-import { runTool } from '../tool-helpers.js';
+import { runTool, parseStr, parseNum } from '../tool-helpers.js';
 import { toolError } from '../errors.js';
+import { searchDocuments } from './search-documents.js';
 
 const NAME = 'search_conversations';
 
@@ -26,21 +25,11 @@ const inputSchema = {
 
 const MIN_SIMILARITY = 0.75;
 
-interface Row {
-  id: string;
-  source: string;
-  source_id: string;
-  title: string | null;
-  content: string;
-  metadata: unknown;
-  similarity: number;
-}
-
 export function registerSearchConversations(server: McpServer): void {
   server.registerTool(NAME, { description: DESCRIPTION, inputSchema }, (input) =>
     runTool(NAME, input, async () => {
       const raw = input as Record<string, unknown>;
-      const query = typeof raw['query'] === 'string' ? raw['query'] : '';
+      const query = parseStr(raw, 'query') ?? '';
       if (!query.trim()) {
         return toolError('search_failed', 'query is required.');
       }
@@ -48,24 +37,14 @@ export function registerSearchConversations(server: McpServer): void {
       const sources = sourcesRaw?.filter(
         (s): s is string => typeof s === 'string',
       ) ?? ['slack', 'notion'];
-      const topK = Math.min(
-        typeof raw['top_k'] === 'number' ? (raw['top_k'] as number) : 8,
-        20,
-      );
+      const topK = Math.min(parseNum(raw, 'top_k') ?? 8, 20);
 
-      const embedding = await embedText(query);
-      const embeddingLiteral = `[${embedding.join(',')}]`;
-
-      const rows = await prisma.$queryRaw<Row[]>`
-        SELECT id, source, source_id, title, content, metadata,
-               1 - (embedding <=> ${embeddingLiteral}::vector) AS similarity
-        FROM document_chunks
-        WHERE embedding IS NOT NULL
-          AND source = ANY(${sources}::text[])
-          AND 1 - (embedding <=> ${embeddingLiteral}::vector) >= ${MIN_SIMILARITY}
-        ORDER BY embedding <=> ${embeddingLiteral}::vector
-        LIMIT ${topK}
-      `;
+      const rows = await searchDocuments({
+        query,
+        sources,
+        topK,
+        minSimilarity: MIN_SIMILARITY,
+      });
 
       return {
         query,

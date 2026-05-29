@@ -1,5 +1,5 @@
-import { prisma } from '@lp-ai/db';
-import type { Prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
+import type { Prisma } from '@lp-ai/lib-db';
 import { aplosPaginate } from './aplos-client.js';
 
 interface AplosFund {

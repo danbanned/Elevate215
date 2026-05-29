@@ -52,8 +52,8 @@ Both connectors follow the same package structure. Example for google-sheets:
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@lp-ai/db": "workspace:*",
-    "@lp-ai/config": "workspace:*",
+    "@lp-ai/lib-db": "workspace:*",
+    "@lp-ai/lib-config": "workspace:*",
     "googleapis": "^140.0.0",
     "zod": "^3.23.0"
   },

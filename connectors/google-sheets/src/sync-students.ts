@@ -1,4 +1,4 @@
-import { prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
 import { getSheetRows } from './sheets-client.js';
 import {
   EXPECTED_STUDENTS_V2_HEADERS,

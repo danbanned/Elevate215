@@ -62,7 +62,7 @@ Two-phase incremental sync:
    b. `GET /blocks/{page_id}/children` recursively → assemble plain-text body
    c. Skip if `Visibility` is unset (fail closed)
    d. Chunk body (~1000 chars, 200-char overlap, prefer block boundaries when feasible)
-   e. Embed each chunk via `@lp-ai/embedding` (OpenAI `text-embedding-3-large`, 1536-dim)
+   e. Embed each chunk via `@lp-ai/lib-embedding` (OpenAI `text-embedding-3-large`, 1536-dim)
    f. Upsert into `document_chunks` keyed on `sourceId='notion:<page_id>:<chunk_index>'`
 
 Full refresh fallback monthly (no `last_edited_time` filter) to catch deletes and any pages where the timestamp didn't update for some reason.

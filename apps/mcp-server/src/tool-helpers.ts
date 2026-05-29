@@ -35,3 +35,11 @@ export async function runTool(
   if (errorMessage) result.isError = true;
   return result;
 }
+
+export function parseStr(raw: Record<string, unknown>, key: string): string | undefined {
+  return typeof raw[key] === 'string' ? (raw[key] as string) : undefined;
+}
+
+export function parseNum(raw: Record<string, unknown>, key: string): number | undefined {
+  return typeof raw[key] === 'number' ? (raw[key] as number) : undefined;
+}

@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { prisma } from '@lp-ai/db';
-import type { Prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
+import type { Prisma } from '@lp-ai/lib-db';
 
-import { runTool } from '../tool-helpers.js';
+import { runTool, parseStr, parseNum } from '../tool-helpers.js';
 
 const NAME = 'query_students';
 
@@ -15,7 +15,7 @@ const inputSchema = {
   field: z.string().optional(),
   enrollment_status: z.string().optional(),
   current_phase: z.string().optional(),
-  cohort: z.string().optional(),
+  cohort: z.number().optional(),
   filter_field: z.string().optional(),
   filter_min: z.number().optional(),
   filter_max: z.number().optional(),
@@ -39,33 +39,15 @@ export function registerQueryStudents(server: McpServer): void {
   server.registerTool(NAME, { description: DESCRIPTION, inputSchema }, (input) =>
     runTool(NAME, input, async () => {
       const raw = input as Record<string, unknown>;
-      const queryType = String(raw['query_type'] ?? 'list');
-      const field = typeof raw['field'] === 'string' ? (raw['field'] as string) : undefined;
-      const enrollmentStatus =
-        typeof raw['enrollment_status'] === 'string'
-          ? (raw['enrollment_status'] as string)
-          : undefined;
-      const currentPhase =
-        typeof raw['current_phase'] === 'string'
-          ? (raw['current_phase'] as string)
-          : undefined;
-      const cohortRaw = raw['cohort'];
-      const cohort: number | undefined =
-        typeof cohortRaw === 'number'
-          ? cohortRaw
-          : typeof cohortRaw === 'string' && cohortRaw.trim() !== '' && !isNaN(Number(cohortRaw))
-            ? Number(cohortRaw)
-            : undefined;
-      const filterField =
-        typeof raw['filter_field'] === 'string'
-          ? (raw['filter_field'] as string)
-          : undefined;
-      const filterMin =
-        typeof raw['filter_min'] === 'number' ? (raw['filter_min'] as number) : undefined;
-      const filterMax =
-        typeof raw['filter_max'] === 'number' ? (raw['filter_max'] as number) : undefined;
-      const limit =
-        typeof raw['limit'] === 'number' ? Math.min(raw['limit'] as number, 1000) : 500;
+      const queryType = parseStr(raw, 'query_type') ?? 'list';
+      const field = parseStr(raw, 'field');
+      const enrollmentStatus = parseStr(raw, 'enrollment_status');
+      const currentPhase = parseStr(raw, 'current_phase');
+      const cohort = parseNum(raw, 'cohort');
+      const filterField = parseStr(raw, 'filter_field');
+      const filterMin = parseNum(raw, 'filter_min');
+      const filterMax = parseNum(raw, 'filter_max');
+      const limit = Math.min(parseNum(raw, 'limit') ?? 500, 1000);
 
       const where: Prisma.StudentWhereInput = {
         ...(enrollmentStatus ? { enrollmentStatus } : {}),

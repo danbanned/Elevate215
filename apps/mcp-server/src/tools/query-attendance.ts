@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { prisma } from '@lp-ai/db';
-import type { Prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
+import type { Prisma } from '@lp-ai/lib-db';
 
-import { runTool } from '../tool-helpers.js';
+import { runTool, parseStr, parseNum } from '../tool-helpers.js';
 
 const NAME = 'query_attendance';
 
@@ -26,15 +26,12 @@ const inputSchema = {
   limit: z.number().optional(),
 };
 
-function buildWhere(input: Record<string, unknown>): Prisma.AttendanceRecordWhereInput {
+function buildWhere(raw: Record<string, unknown>): Prisma.AttendanceRecordWhereInput {
   const where: Prisma.AttendanceRecordWhereInput = {};
-  const studentNumber =
-    typeof input['student_number'] === 'string' ? input['student_number'] : undefined;
-  const cohort = typeof input['cohort'] === 'number' ? input['cohort'] : undefined;
-  const startDate =
-    typeof input['start_date'] === 'string' ? input['start_date'] : undefined;
-  const endDate =
-    typeof input['end_date'] === 'string' ? input['end_date'] : undefined;
+  const studentNumber = parseStr(raw, 'student_number');
+  const cohort = parseNum(raw, 'cohort');
+  const startDate = parseStr(raw, 'start_date');
+  const endDate = parseStr(raw, 'end_date');
 
   if (studentNumber) where.studentNumber = studentNumber;
   if (cohort !== undefined) where.cohort = cohort;
@@ -90,14 +87,11 @@ export function registerQueryAttendance(server: McpServer): void {
   server.registerTool(NAME, { description: DESCRIPTION, inputSchema }, (input) =>
     runTool(NAME, input, async () => {
       const raw = input as Record<string, unknown>;
-      const queryType = String(raw['query_type'] ?? 'aggregate');
+      const queryType = parseStr(raw, 'query_type') ?? 'aggregate';
       const where = buildWhere(raw);
 
       if (queryType === 'events') {
-        const limit = Math.min(
-          typeof raw['limit'] === 'number' ? (raw['limit'] as number) : 200,
-          500,
-        );
+        const limit = Math.min(parseNum(raw, 'limit') ?? 200, 500);
         const [totalMatched, rows] = await Promise.all([
           prisma.attendanceRecord.count({ where }),
           prisma.attendanceRecord.findMany({
@@ -169,8 +163,11 @@ export function registerQueryAttendance(server: McpServer): void {
         };
       }
 
-      const groupBy = String(raw['group_by'] ?? 'cohort');
-      const groups = new Map<string, { totals: AttendanceTotals; students: Set<string> }>();
+      const groupBy = parseStr(raw, 'group_by') ?? 'cohort';
+      const groups = new Map<
+        string,
+        { totals: AttendanceTotals; students: Set<string> }
+      >();
       for (const r of rows) {
         const student = students.get(r.studentNumber);
         const key =

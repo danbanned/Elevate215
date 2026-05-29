@@ -7,9 +7,9 @@ const monorepoRoot = resolve(here, '..', '..');
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
-  outputFileTracingRoot: monorepoRoot,
+  serverExternalPackages: ['@lp-ai/lib-db', '@prisma/adapter-pg', 'pg'],
   experimental: {
-    serverComponentsExternalPackages: ['@prisma/client', '.prisma/client'],
+    outputFileTracingRoot: monorepoRoot,
   },
   reactStrictMode: true,
 };

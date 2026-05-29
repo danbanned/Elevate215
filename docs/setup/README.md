@@ -4,6 +4,12 @@ This folder contains a step-by-step setup guide for every system in the V1 stack
 
 **Stack locked:** May 18 2026 · Next review: August 2026
 
+Quick onboarding resources:
+
+- [../reference/new-developer-playbook.md](../reference/new-developer-playbook.md)
+- [../reference/connector-capability-matrix.md](../reference/connector-capability-matrix.md)
+- [../../HOW-SKILLS-WORK.md](../../HOW-SKILLS-WORK.md)
+
 ---
 
 ## Checklist
@@ -15,10 +21,10 @@ Status legend: ✅ Complete · 🟡 Built (awaiting credential to activate) · �
 | 0 | Project bootstrap — monorepo, git, config files | [00-bootstrap.md](00-bootstrap.md) | ✅ Complete | 12 workspace projects, vitest, CI |
 | 1 | AWS account + IAM baseline | [01-aws-baseline.md](01-aws-baseline.md) | 🔲 Pending | Blocks all AWS phases |
 | 2 | AWS RDS Postgres + pgvector extension | [02-rds-postgres.md](02-rds-postgres.md) | 🟡 Local | Docker compose stands in for RDS today; schema ready |
-| 3 | AWS Secrets Manager + `@lp-ai/config` package | [03-secrets-manager.md](03-secrets-manager.md) | 🟡 Config | `@lp-ai/config` built; Secrets Manager fetch path stubbed until Phase 1 |
+| 3 | AWS Secrets Manager + `@lp-ai/lib-config` package | [03-secrets-manager.md](03-secrets-manager.md) | 🟡 Config | `@lp-ai/lib-config` built; Secrets Manager fetch path stubbed until Phase 1 |
 | 4 | Prisma schema — all tables | [04-prisma-schema.md](04-prisma-schema.md) | ✅ Complete | 22 tables incl. NextAuth + sync_runs + pending_aliases; init migration captured |
 | 5 | Google connectors — Sheets + Drive | [05-google-connectors.md](05-google-connectors.md) | 🟡 Scaffold | Awaiting `GOOGLE_SERVICE_ACCOUNT_JSON` |
-| 6 | Embeddings + pgvector search | [06-embeddings-pgvector.md](06-embeddings-pgvector.md) | 🟡 Built | `@lp-ai/embedding` ready; awaiting `OPENAI_API_KEY` for runtime |
+| 6 | Embeddings + pgvector search | [06-embeddings-pgvector.md](06-embeddings-pgvector.md) | 🟡 Built | `@lp-ai/lib-embedding` ready; awaiting `OPENAI_API_KEY` for runtime |
 | 7 | MCP server — 14 tools | [07-mcp-server.md](07-mcp-server.md) | ✅ Complete | All 14 tools wired to Prisma; stdio + HTTP transports; smoke-tested |
 | 8 | HQ dashboard — Next.js + NextAuth | [08-hq-dashboard.md](08-hq-dashboard.md) | 🟡 Built | All pages live; sign-in awaits `AUTH_GOOGLE_ID`/`SECRET` |
 | 9 | AWS App Runner deployment | [09-app-runner.md](09-app-runner.md) | 🔲 Pending | Docker images built and verified locally; awaiting AWS |

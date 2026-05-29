@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { prisma } from '@lp-ai/db';
+import { prisma } from '@lp-ai/lib-db';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,7 +9,7 @@ interface PageProps {
 
 export default async function ToolsPage({
   searchParams,
-}: PageProps): Promise<JSX.Element> {
+}: PageProps) {
   const toolFilter = searchParams.tool;
   const statusFilter = searchParams.status;
 

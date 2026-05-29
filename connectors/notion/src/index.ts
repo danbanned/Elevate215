@@ -1,4 +1,4 @@
-import { runSync, type SyncRunRecord } from '@lp-ai/db';
+import { runSync, type SyncRunRecord } from '@lp-ai/lib-db';
 import { syncMeetings } from './sync-meetings.js';
 
 export type SyncResult = SyncRunRecord;
