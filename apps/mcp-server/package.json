@@ -18,6 +18,7 @@
     "@lp-ai/lib-db": "workspace:*",
     "@lp-ai/lib-embedding": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "@sentry/node": "^10.57.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {

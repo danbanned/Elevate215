@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/node';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -8,6 +9,9 @@ import { prisma } from '@lp-ai/lib-db';
 import { makeServer } from './make-server.js';
 
 const env = await loadEnv();
+if (env.SENTRY_DSN_MCP) {
+  Sentry.init({ dsn: env.SENTRY_DSN_MCP, environment: process.env['NODE_ENV'], tracesSampleRate: 0.1 });
+}
 const PORT = Number(process.env['AWS_MCP_PORT'] ?? process.env['PORT'] ?? '8081');
 const SYNC_SECRET = env.SYNC_SECRET ?? 'default-secret-token';
 
