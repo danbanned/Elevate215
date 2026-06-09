@@ -37,28 +37,28 @@ aws ecr get-login-password --region $AWS_REGION | \
   $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
 # HQ dashboard
-docker build --platform linux/amd64 -f apps/hq/Dockerfile -t lp-internal/hq .
+docker build -f apps/hq/Dockerfile -t lp-internal/hq .
 docker tag lp-internal/hq \
   $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/lp-internal/hq:latest
 docker push \
   $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/lp-internal/hq:latest
 
 # MCP server
-docker build --platform linux/amd64 -f apps/mcp-server/Dockerfile -t lp-internal/mcp-server .
+docker build -f apps/mcp-server/Dockerfile -t lp-internal/mcp-server .
 docker tag lp-internal/mcp-server \
   $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/lp-internal/mcp-server:latest
 docker push \
   $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/lp-internal/mcp-server:latest
 
 # AWS MCP server (governance/Terraform job server)
-docker build --platform linux/amd64 -f apps/aws-mcp-server/Dockerfile -t lp-internal/aws-mcp-server .
+docker build -f apps/aws-mcp-server/Dockerfile -t lp-internal/aws-mcp-server .
 docker tag lp-internal/aws-mcp-server \
   $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/lp-internal/aws-mcp-server:latest
 docker push \
   $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/lp-internal/aws-mcp-server:latest
 ```
 
-> `--platform linux/amd64` is required if you're building on an Apple Silicon Mac. Fargate runs on amd64; the explicit flag avoids cross-arch surprises.
+> **Architecture: ARM64 Graviton.** The task definitions in `infra/ecs/*-taskdef.json` declare `"cpuArchitecture": "ARM64"` so Fargate runs on Graviton (~20% cheaper than X86_64). Apple Silicon builds match prod natively — no `--platform` flag needed. If you build from a Linux x86 host (e.g. a CI runner), add `--platform linux/arm64` to each `docker build`.
 
 ---
 
@@ -369,7 +369,7 @@ For a real release flow, tag images with the git SHA (`:$(git rev-parse --short 
 - **`CannotPullContainerError`** — Fargate task can't reach ECR. Either the subnet has no route to the internet, or ECR endpoints aren't reachable. Tasks in public subnets need `assignPublicIp=ENABLED`; private subnets need a NAT gateway or the ECR VPC endpoint.
 - **ALB health checks fail with 502** — the task is running but the health endpoint isn't returning 200 in time. Increase the task's `startPeriod` (already 60s in the example) and the target group's `HealthCheckGracePeriodSeconds`.
 - **TLS leaks bearer tokens on port 80** — the redirect from 80→443 must be present *before* any traffic flows. Don't leave a plain HTTP listener forwarding to a target group.
-- **Apple Silicon image won't start on Fargate** — build with `--platform linux/amd64`. Symptom is `exec format error` in task logs ~10 seconds after each task starts.
+- **`exec format error` ~10s after each task starts** — image architecture doesn't match the task def. Either rebuild with `--platform linux/arm64` (the default target since task defs declare `ARM64`) or flip the task def to `X86_64`. ECR's `aws ecr batch-get-image ... | jq '.manifests[].platform.architecture'` will show what the pushed image actually claims.
 
 ---
 
