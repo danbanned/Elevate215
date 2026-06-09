@@ -9,7 +9,7 @@
 - Phase 8 complete — HQ dashboard builds and passes health check locally
 - Phase 7 complete — MCP server builds and passes health check locally
 - Docker installed locally (`docker --version`), Node 22 + pnpm 10 on the build host
-- A registered domain or subdomain you control DNS for (e.g. `hq.launchpadphilly.org`)
+- A registered domain or subdomain you control DNS for (e.g. `hq.launchpadinc.org`)
 
 ---
 
@@ -197,8 +197,8 @@ AWSMCP_TG=$(aws elbv2 create-target-group \
 ```bash
 # Replace with your domain(s)
 CERT_ARN=$(aws acm request-certificate \
-  --domain-name hq.launchpadphilly.org \
-  --subject-alternative-names mcp.launchpadphilly.org aws-mcp.launchpadphilly.org \
+  --domain-name hq.launchpadinc.org \
+  --subject-alternative-names mcp.launchpadinc.org aws-mcp.launchpadinc.org \
   --validation-method DNS \
   --query CertificateArn --output text)
 
@@ -233,11 +233,11 @@ HTTPS_LISTENER=$(aws elbv2 create-listener \
 
 # Host-based rules for the two MCP servers
 aws elbv2 create-rule --listener-arn $HTTPS_LISTENER --priority 10 \
-  --conditions Field=host-header,Values=mcp.launchpadphilly.org \
+  --conditions Field=host-header,Values=mcp.launchpadinc.org \
   --actions Type=forward,TargetGroupArn=$MCP_TG
 
 aws elbv2 create-rule --listener-arn $HTTPS_LISTENER --priority 20 \
-  --conditions Field=host-header,Values=aws-mcp.launchpadphilly.org \
+  --conditions Field=host-header,Values=aws-mcp.launchpadinc.org \
   --actions Type=forward,TargetGroupArn=$AWSMCP_TG
 ```
 
@@ -320,9 +320,9 @@ In your DNS provider, create CNAME (or Route 53 alias) records:
 
 | Hostname | Type | Target |
 |---|---|---|
-| `hq.launchpadphilly.org` | CNAME / A-alias | `$ALB_DNS` |
-| `mcp.launchpadphilly.org` | CNAME / A-alias | `$ALB_DNS` |
-| `aws-mcp.launchpadphilly.org` | CNAME / A-alias | `$ALB_DNS` |
+| `hq.launchpadinc.org` | CNAME / A-alias | `$ALB_DNS` |
+| `mcp.launchpadinc.org` | CNAME / A-alias | `$ALB_DNS` |
+| `aws-mcp.launchpadinc.org` | CNAME / A-alias | `$ALB_DNS` |
 
 If you use Route 53, prefer A-alias records — they're free and resolve faster than CNAME chains.
 
@@ -338,12 +338,12 @@ For production hardening, swap `assignPublicIp=ENABLED` in the service definitio
 
 - [ ] All three images pushed to ECR (`aws ecr list-images --repository-name lp-internal/hq` shows `latest`)
 - [ ] All three ECS services show `runningCount: 1, desiredCount: 1` and `deploymentStatus: PRIMARY` steady
-- [ ] `curl https://hq.launchpadphilly.org/api/health` returns `{ "status": "ok" }`
-- [ ] `curl https://mcp.launchpadphilly.org/health` returns `{ "status": "ok" }`
-- [ ] `curl https://aws-mcp.launchpadphilly.org/health` returns `{ "status": "ok" }`
-- [ ] `curl -X POST https://mcp.launchpadphilly.org/mcp` returns `401 unauthorized` (no token)
-- [ ] `curl -X POST https://mcp.launchpadphilly.org/mcp -H "Authorization: Bearer $SYNC_SECRET" -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'` returns the tool list
-- [ ] Google sign-in works on `https://hq.launchpadphilly.org` with a `@launchpadphilly.org` account
+- [ ] `curl https://hq.launchpadinc.org/api/health` returns `{ "status": "ok" }`
+- [ ] `curl https://mcp.launchpadinc.org/health` returns `{ "status": "ok" }`
+- [ ] `curl https://aws-mcp.launchpadinc.org/health` returns `{ "status": "ok" }`
+- [ ] `curl -X POST https://mcp.launchpadinc.org/mcp` returns `401 unauthorized` (no token)
+- [ ] `curl -X POST https://mcp.launchpadinc.org/mcp -H "Authorization: Bearer $SYNC_SECRET" -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'` returns the tool list
+- [ ] Google sign-in works on `https://hq.launchpadinc.org` with a `@launchpadphilly.org` account
 - [ ] RDS public access disabled; ECS tasks connect via `lp-ecs-task-sg`
 
 ---
