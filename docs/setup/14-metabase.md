@@ -63,7 +63,7 @@ MB_DB_PASS=<password>
 
 Recommended task size: **1 vCPU / 2 GB RAM** — Metabase requires at least this to start reliably.
 
-Add an ALB listener rule that routes `metabase.launchpadphilly.org` to this service's target group.
+Add an ALB listener rule that routes `metabase.launchpadinc.org` to this service's target group.
 
 ---
 

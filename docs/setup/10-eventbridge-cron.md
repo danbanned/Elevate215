@@ -131,7 +131,7 @@ aws lambda create-function \
 ## 3. Create EventBridge schedule rules
 
 ```bash
-MCP_URL="https://mcp.launchpadphilly.org"
+MCP_URL="https://mcp.launchpadinc.org"
 LAMBDA_ARN="arn:aws:lambda:us-east-1:${AWS_ACCOUNT_ID}:function:lp-sync-trigger"
 
 # Allow EventBridge to invoke the Lambda

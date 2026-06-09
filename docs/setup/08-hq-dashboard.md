@@ -17,7 +17,7 @@
 4. Name: `LP Internal AI HQ`
 5. Authorized redirect URIs:
    - `http://localhost:3000/api/auth/callback/google` (local dev)
-   - `https://hq.launchpadphilly.org/api/auth/callback/google` (production — add once Phase 9 deploys)
+   - `https://hq.launchpadinc.org/api/auth/callback/google` (production — add once Phase 9 deploys)
 6. Copy the **Client ID** and **Client Secret** → store in `.env` as `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET`
 7. Generate an `AUTH_SECRET`: `openssl rand -base64 32`
 
