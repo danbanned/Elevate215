@@ -127,6 +127,8 @@ export async function seed(
   await prisma.studentCompetency.deleteMany();
   await prisma.studentPhaseOutcome.deleteMany();
   await prisma.studentInfo.deleteMany();
+  await prisma.studentEmployment.deleteMany();
+  await prisma.studentPostsecondary.deleteMany();
   await prisma.entityAlias.deleteMany();
   await prisma.student.deleteMany();
   await prisma.donorGift.deleteMany();

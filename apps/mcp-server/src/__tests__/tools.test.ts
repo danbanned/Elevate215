@@ -19,7 +19,7 @@ describeLocal('MCP tool handlers (integration)', () => {
     await prisma.$disconnect();
   });
 
-  it('tools/list exposes all 15 tools', async () => {
+  it('tools/list exposes all 16 tools', async () => {
     const tools = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
@@ -35,6 +35,7 @@ describeLocal('MCP tool handlers (integration)', () => {
         'query_enrollment',
         'query_finances',
         'query_outcomes',
+        'query_postsecondary',
         'query_students',
         'search_by_person',
         'search_conversations',

@@ -19,6 +19,7 @@ describeLocal('entity resolution (live local Postgres)', () => {
     await prisma.entityAlias.deleteMany({});
     await prisma.pendingAlias.deleteMany({});
     await prisma.studentEmployment.deleteMany({});
+    await prisma.studentPostsecondary.deleteMany({});
     await prisma.student.deleteMany({});
     await prisma.staff.deleteMany({});
   });
