@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { auth } from '../../auth';
 import { promoteUser, disableUser, addUser } from './actions';
 import { ROLES } from './roles';
+import { PermissionsMatrix } from './PermissionsMatrix';
 
 export const dynamic = 'force-dynamic';
 
@@ -210,6 +211,19 @@ export default async function AdminPage() {
             Add user
           </button>
         </form>
+      </section>
+
+      <section className="space-y-2">
+        <header>
+          <h2 className="text-lg font-semibold text-ink">Tool permissions</h2>
+          <p className="text-sm text-muted">
+            Each cell is a toggle. Adding a role to a row lets users with that role
+            call the tool from Claude. Removing a role denies them.
+            Changes propagate to the running MCP server within{' '}
+            <strong>~60 seconds</strong> (the server caches this table).
+          </p>
+        </header>
+        <PermissionsMatrix />
       </section>
     </div>
   );

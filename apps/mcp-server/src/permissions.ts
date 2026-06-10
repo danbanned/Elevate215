@@ -1,12 +1,17 @@
 /**
  * MCP role + tool-level ACL registry (Phase 23).
  *
- * Roles are stored per-user in `mcp_users.roles` (string[]) and are fetched
- * fresh from the DB on every tool call by `auth.ts`. Never bake roles into
- * the JWT — we want role changes to take effect immediately.
+ * The role list is fixed in code (8 roles). The tool → roles mapping lives in
+ * the `tool_permissions` table and is editable from HQ /admin. The MCP server
+ * caches it in memory for CACHE_TTL_MS to keep tool-call latency low; UI
+ * changes therefore take effect within ~60 seconds.
  *
- * See docs/setup/23-mcp-oauth.md for the full design.
+ * The original static map shipped in PR #16 has been moved to the DB seed
+ * migration `20260610180000_add_tool_permissions`. If the seed migration ever
+ * needs to run again, the values there are the canonical defaults.
  */
+
+import { prisma } from '@lp-ai/lib-db';
 
 export const ROLES = [
   'pending',
@@ -25,69 +30,64 @@ export function isRole(value: string): value is Role {
   return (ROLES as readonly string[]).includes(value);
 }
 
-/**
- * Tool → roles allowed to call it. A user passes if they hold ANY listed role.
- *
- * `admin` and `leadership` are intentionally listed explicitly on every tool —
- * makes audits easier than relying on an implicit "admin gets everything" rule
- * scattered through the code.
- *
- * Future tools (HubSpot/GitHub/Notion) have entries reserved here so adding
- * the connector later doesn't require a permissions PR.
- */
-export const TOOL_PERMISSIONS: Record<string, readonly Role[]> = {
-  // ----- Student data (program_staff is the main reader) -----
-  get_student_info: ['program_staff', 'leadership', 'admin'],
-  query_students: ['program_staff', 'leadership', 'admin'],
-  query_outcomes: ['program_staff', 'leadership', 'admin'],
-  query_enrollment: ['program_staff', 'leadership', 'admin'],
-  query_certifications: ['program_staff', 'leadership', 'admin'],
-  query_competency: ['program_staff', 'leadership', 'admin'],
-  query_attendance: ['program_staff', 'leadership', 'admin'],
+const CACHE_TTL_MS = 60_000;
 
-  // ----- Donor / finance -----
-  query_donors: ['development', 'sales', 'finance', 'leadership', 'admin'],
-  query_finances: ['finance', 'leadership', 'admin'],
-  get_finance_brief: ['finance', 'leadership', 'admin'],
-  get_entity_brief: ['development', 'sales', 'leadership', 'admin'],
+interface CacheEntry {
+  rolesByTool: Map<string, Set<string>>;
+  loadedAt: number;
+}
 
-  // ----- Cross-cutting search -----
-  search_by_person: ['program_staff', 'development', 'leadership', 'admin'],
-  search_conversations: ['program_staff', 'software_dev', 'leadership', 'admin'],
-  search_documents: [
-    'program_staff',
-    'development',
-    'sales',
-    'software_dev',
-    'leadership',
-    'admin',
-  ],
+let cache: CacheEntry | null = null;
+let inflight: Promise<CacheEntry> | null = null;
 
-  // ----- Future tools (registered now so the connectors can land without
-  //       a permissions PR; the tool handlers don't exist yet) -----
-  query_hubspot_contacts: ['sales', 'leadership', 'admin'],
-  query_hubspot_deals: ['sales', 'leadership', 'admin'],
-  query_github_issues: ['software_dev', 'leadership', 'admin'],
-  query_github_prs: ['software_dev', 'leadership', 'admin'],
-  query_policy: ['program_staff', 'software_dev', 'leadership', 'admin'],
-  query_clients: ['software_dev', 'sales', 'leadership', 'admin'],
-};
+async function loadFromDb(): Promise<CacheEntry> {
+  const rows = await prisma.toolPermission.findMany();
+  const rolesByTool = new Map<string, Set<string>>();
+  for (const r of rows) rolesByTool.set(r.toolName, new Set(r.allowedRoles));
+  return { rolesByTool, loadedAt: Date.now() };
+}
 
-/**
- * True iff the user has at least one role permitted to call the tool.
- * Pending or disabled users (callers with no/empty roles array) always fail.
- */
-export function canCallTool(toolName: string, userRoles: readonly string[]): boolean {
-  const allowed = TOOL_PERMISSIONS[toolName];
-  if (!allowed) return false; // unknown tool → deny by default
-  if (userRoles.length === 0) return false;
-  return userRoles.some((r) => (allowed as readonly string[]).includes(r));
+async function getCached(): Promise<CacheEntry> {
+  if (cache && Date.now() - cache.loadedAt < CACHE_TTL_MS) return cache;
+  // Coalesce concurrent refreshes
+  if (!inflight) {
+    inflight = loadFromDb().then((c) => {
+      cache = c;
+      inflight = null;
+      return c;
+    });
+  }
+  return inflight;
 }
 
 /**
- * Structured deny response, mirrors toolError() shape.
- * Callers throw this from runTool() when canCallTool() returns false.
+ * Test-only override: lets unit tests stub the registry without touching the DB.
+ * Production code MUST NOT call this.
  */
+export function __setPermissionsForTesting(map: Record<string, readonly string[]>): void {
+  const rolesByTool = new Map<string, Set<string>>();
+  for (const [tool, roles] of Object.entries(map)) {
+    rolesByTool.set(tool, new Set(roles));
+  }
+  cache = { rolesByTool, loadedAt: Date.now() };
+}
+
+export function __clearPermissionsCacheForTesting(): void {
+  cache = null;
+  inflight = null;
+}
+
+export async function canCallTool(
+  toolName: string,
+  userRoles: readonly string[],
+): Promise<boolean> {
+  if (userRoles.length === 0) return false;
+  const c = await getCached();
+  const allowed = c.rolesByTool.get(toolName);
+  if (!allowed) return false;
+  return userRoles.some((r) => allowed.has(r));
+}
+
 export function permissionDeniedError(toolName: string): {
   code: 'permission_denied';
   message: string;

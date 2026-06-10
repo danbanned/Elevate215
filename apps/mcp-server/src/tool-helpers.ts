@@ -23,7 +23,7 @@ export async function runTool(
   let errorMessage: string | undefined;
 
   // Per-tool ACL (Phase 23). Service callers (EventBridge etc.) bypass.
-  if (caller && caller.kind === 'user' && !canCallTool(toolName, caller.roles)) {
+  if (caller && caller.kind === 'user' && !(await canCallTool(toolName, caller.roles))) {
     const denied = permissionDeniedError(toolName);
     errorMessage = denied.message;
     output = { error: denied };

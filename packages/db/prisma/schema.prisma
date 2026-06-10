@@ -519,3 +519,16 @@ model OAuthRefreshToken {
   @@index([expiresAt])
   @@map("oauth_refresh_tokens")
 }
+
+// Tool-level ACL, editable from HQ /admin. The MCP server reads this table
+// (cached for ~60s) instead of a static TS registry, so admins can change
+// who can call what without a code deploy.
+model ToolPermission {
+  toolName     String   @id @map("tool_name")
+  allowedRoles String[] @default([]) @map("allowed_roles")
+  category     String   @default("other") // students | donor_finance | search | future | other
+  description  String?
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("tool_permissions")
+}

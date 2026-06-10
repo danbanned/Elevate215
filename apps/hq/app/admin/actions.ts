@@ -76,3 +76,39 @@ export async function addUser(formData: FormData): Promise<void> {
   });
   revalidatePath('/admin');
 }
+
+/**
+ * Toggle a single tool↔role cell in the matrix.
+ * `next` is the new state ('true' to add, 'false' to remove).
+ */
+export async function toggleToolRole(formData: FormData): Promise<void> {
+  await assertAdmin();
+  const toolName = formData.get('toolName');
+  const role = formData.get('role');
+  const next = formData.get('next');
+  if (typeof toolName !== 'string' || !toolName) throw new Error('tool_required');
+  if (typeof role !== 'string' || !(ROLES as readonly string[]).includes(role)) {
+    throw new Error('invalid_role');
+  }
+
+  const row = await prisma.toolPermission.findUnique({ where: { toolName } });
+  if (!row) throw new Error('unknown_tool');
+
+  const has = row.allowedRoles.includes(role);
+  const shouldHave = next === 'true';
+  if (has === shouldHave) {
+    // no-op; just refresh
+    revalidatePath('/admin');
+    return;
+  }
+
+  const newRoles = shouldHave
+    ? [...row.allowedRoles, role].sort()
+    : row.allowedRoles.filter((r) => r !== role);
+
+  await prisma.toolPermission.update({
+    where: { toolName },
+    data: { allowedRoles: newRoles },
+  });
+  revalidatePath('/admin');
+}
