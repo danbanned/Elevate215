@@ -27,7 +27,7 @@ This connector must never write to any spreadsheet. Three layers:
 2. **Settings preconditions throw, never write.** Tabs that depend on dropdown / selector cells (e.g., the `View=Detail`, `Year=FY 2026`, `Revenue Type=Projected` selectors at row 3 of the Phase Budget Dashboard's monthly tabs, or the View/Revenue Type/Fund/Year selectors on the Launchpad Dashboard tabs) are validated with `verifySettings` / `validateSelectors`. On mismatch the sync raises `SheetSettingsMismatchError` (defined in `src/errors.ts`) with a per-cell breakdown (spreadsheet ID, tab, A1 address, expected value, actual value). The user fixes the cell manually.
 3. **OAuth scope.** The connector authenticates with `https://www.googleapis.com/auth/spreadsheets`. The `.readonly` scope is documented as covering reads, but Google's data-filter endpoints (`spreadsheets.getByDataFilter`, `values.batchGetByDataFilter`) require the broader scope — without them we'd OOM on large multi-tab sheets like PEX. The actual write protection is layers 1 + 2; the scope is the minimum that supports targeted-tab fetches.
 
-When a settings mismatch fires, `logSheetSettingsMismatch` writes a `‼️ SHEET SETTINGS MISMATCH` block to `console.error` so the message rises above routine progress logs in Railway. One mismatch on one tab does not sink the rest of the run; that tab is skipped, others continue.
+When a settings mismatch fires, `logSheetSettingsMismatch` writes a `‼️ SHEET SETTINGS MISMATCH` block to `console.error` so the message rises above routine progress logs in CloudWatch. One mismatch on one tab does not sink the rest of the run; that tab is skipped, others continue.
 
 ## Sheets and Tabs in Scope
 
@@ -132,7 +132,7 @@ Enforcement: the connector reads only the columns in `STUDENTS_ALLOWED_COLS` (a 
 
 ### Header-Drift Guard
 
-Before reading any data, the connector reads `Students!A1:AN1` and compares against `EXPECTED_STUDENTS_HEADERS` (the 40-cell canonical sequence including blank cells). If any header differs in position, the sync aborts immediately with error code `students_header_mismatch` and writes the mismatch detail to `sync_log.error_message`. This prevents silent data corruption if columns are reordered.
+Before reading any data, the connector reads `Students!A1:AN1` and compares against `EXPECTED_STUDENTS_HEADERS` (the 40-cell canonical sequence including blank cells). If any header differs in position, the sync aborts immediately with error code `students_header_mismatch` and writes the mismatch detail to `sync_runs.error_message`. This prevents silent data corruption if columns are reordered.
 
 ## Column Mappings
 
@@ -208,27 +208,27 @@ All tabs follow the same storage pattern: each data row is stored as JSONB with 
 
 ### Student Information sheet
 
-1. Write `sync_log` row (`status = 'running'`, `connector = 'google-sheets'`)
+1. Write `sync_runs` row (`status = 'running'`, `connector = 'google-sheets'`)
 2. Read `Students!A1:AN1` — compare against `EXPECTED_STUDENTS_HEADERS`; abort on mismatch
 3. Read `Students!A2:AN` (all data rows, allowed cols only)
 4. For each row: upsert into `students` on conflict `student_id`; upsert phase cols into `student_phase_outcomes` on conflict `student_id`
 5. Read `Certifications!A2:H` (all data rows)
 6. For each row: resolve `student_id` FK, upsert into `student_certifications` on conflict `source_id`
-7. Update `sync_log`
+7. Update `sync_runs`
 
 ### Launchpad Dashboard sheet
 
-1. Write `sync_log` row
+1. Write `sync_runs` row
 2. For each of the six tabs (in order): read all rows, upsert each into `finance_snapshots` on conflict `source_id`
-3. Update `sync_log`
+3. Update `sync_runs`
 
 Row numbers are stable as long as rows aren't deleted and reinserted. The header-drift guard on the Students tab covers the most sensitive case; finance tabs use JSONB so column additions/renames degrade gracefully.
 
 ## Sync Schedule
 
-Railway cron: **daily at 3:00 AM ET**
+AWS EventBridge: **daily at 3:00 AM ET** (via `apps/sync` Fargate task)
 
-Manual: `pnpm --filter google-sheets sync`
+Manual: `pnpm sync:sheets`
 
 ## Auth
 
@@ -238,7 +238,7 @@ Required GCP API: **Google Sheets API v4**
 
 ## Error Handling
 
-- `students_header_mismatch` → abort entire sync, write detail to `sync_log.error_message`
+- `students_header_mismatch` → abort entire sync, write detail to `sync_runs.error_message`
 - Sheet/tab not found → fail sync, write error
 - Unparseable date or number in a row → log warning with row index, skip row, continue
 - FK lookup miss (studentId not in `students`) → log warning, skip row
@@ -285,5 +285,5 @@ Key files:
 - `src/sync-development-crm.ts` — Building21 CRM (6 tabs)
 - `src/sync-attendance.ts` — three cohort sheets, chunked-fetch (5,000 rows per chunk)
 - `src/sync-distances.ts` — geocodes student zips to office distance
-- `src/sync.ts` — orchestrates all syncs, writes `sync_log`
+- `src/sync.ts` — orchestrates all syncs, writes `sync_runs`
 - `src/index.ts` — entrypoint

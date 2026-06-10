@@ -26,7 +26,7 @@ entity_aliases
   source: 'drive',    alias: 'Maria Garcia'   → students.id = uuid-A
 ```
 
-MCP tools resolve any alias to a canonical entity ID before querying. The entity ID is also stored in Pinecone metadata so vector search results can be filtered by person.
+MCP tools resolve any alias to a canonical entity ID before querying. The entity ID is also stored in `document_chunks.metadata` (pgvector) so vector search results can be filtered by person.
 
 ## Cold Start (Initial Seeding)
 
@@ -62,7 +62,7 @@ An admin can correct a bad alias link via the HQ dashboard (V0: direct DB edit; 
 
 ## Embedding Metadata
 
-When a connector embeds content, it attempts to resolve entity mentions in the chunk and stores the resolved `entity_ids[]` in Pinecone metadata. This allows the `search_by_person` MCP tool to filter Pinecone results by entity UUID rather than doing post-hoc name matching.
+When a connector embeds content, it attempts to resolve entity mentions in the chunk and stores the resolved `entity_ids[]` in `document_chunks.metadata` (pgvector). This allows the `search_by_person` MCP tool to filter search results by entity UUID rather than doing post-hoc name matching.
 
 Entity mention detection for V0 is simple: exact or near-exact string match against all known aliases. NLP-based co-reference resolution is deferred to Phase 1.
 

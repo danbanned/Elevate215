@@ -22,7 +22,7 @@ Syncs structured attendance and Beacon outcome data from the BigQuery data wareh
 
 ## Sync Schedule
 
-Railway cron: **daily at 2:00 AM ET**
+AWS EventBridge: **daily at 2:00 AM ET** (via `apps/sync` Fargate task)
 
 For manual triggering: `pnpm --filter bigquery sync`
 
@@ -34,7 +34,7 @@ For manual triggering: `pnpm --filter bigquery sync`
 
 ## Sync Logic (Step by Step)
 
-1. Write a `sync_log` row with `status = 'running'`
+1. Write a `sync_runs` row with `status = 'running'`
 2. Build a BigQuery client from the service account credentials
 3. Run the attendance query (rolling 7-day window)
 4. For each result row:
@@ -43,12 +43,12 @@ For manual triggering: `pnpm --filter bigquery sync`
    c. Upsert into `attendance_records` using `source_id` as conflict key
 5. Run the Beacon outcomes query (rolling 30-day window)
 6. Same resolution + upsert pattern
-7. Update `sync_log` row: `status = 'success'`, `records_synced = total_rows`, `finished_at = now()`
-8. On any error: update `sync_log` row with `status = 'error'`, `error_message = error.message`
+7. Update `sync_runs` row: `status = 'success'`, `records_upserted = total_rows`, `finished_at = now()`
+8. On any error: update `sync_runs` row with `status = 'error'`, `error = error.message`
 
 ## Error Handling
 
-- BigQuery auth failures → log to `sync_log` + exit with non-zero code (Railway alerts on non-zero exit)
+- BigQuery auth failures → log to `sync_runs` + exit with non-zero code (CloudWatch alerts on non-zero exit)
 - Individual row resolution failures → log warning, skip row, continue sync
 - Network timeouts → retry up to 3 times with exponential backoff before failing the sync
 
@@ -70,6 +70,6 @@ DATABASE_URL=                  # Postgres connection string
 `connectors/bigquery/`
 
 Key files:
-- `index.ts` — entrypoint, called by Railway cron
+- `index.ts` — entrypoint, called by EventBridge via Fargate task
 - `queries.ts` — BigQuery SQL queries
 - `sync.ts` — main sync orchestration logic

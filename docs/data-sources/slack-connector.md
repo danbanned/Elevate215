@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Ingests Slack messages from all public channels and opted-in private channels into Pinecone for semantic search. Enables questions like "What has the team been saying about student X?" and "What was discussed in #general about the spring showcase?"
+Ingests Slack messages from all public channels and opted-in private channels into pgvector (`document_chunks` table) for semantic search. Enables questions like "What has the team been saying about student X?" and "What was discussed in #general about the spring showcase?"
 
 ## Channel Scope
 
@@ -26,9 +26,9 @@ Backfill rate limiting: Slack's Web API allows ~20 requests/minute per token for
 
 ## Sync Approach
 
-**Polling (not Socket Mode).** The connector runs on an hourly Railway cron and fetches messages newer than the last sync timestamp. Socket Mode (real-time events) adds operational complexity and isn't necessary for V0 where hourly freshness is acceptable.
+**Polling (not Socket Mode).** The connector runs on an hourly AWS EventBridge schedule (via `apps/sync` Fargate task) and fetches messages newer than the last sync timestamp. Socket Mode (real-time events) adds operational complexity and isn't necessary where hourly freshness is acceptable.
 
-Last sync timestamp per channel is stored in Postgres (`sync_log` table with channel_id in a metadata JSON column).
+Last sync timestamp per channel is stored in Postgres (`sync_runs` table with channel_id in a metadata JSON column).
 
 ## Message Chunking Strategy
 
@@ -41,7 +41,7 @@ Rationale: preserving thread context makes search results dramatically more usef
 
 ## Metadata per Chunk
 
-See [vector-db-schema.md](../vector-db-schema.md) for the full Pinecone metadata schema. Key fields: `channel_id`, `channel_name`, `author_id`, `author_name`, `timestamp`, `thread_ts`, `entity_ids`.
+Key metadata fields (stored in `document_chunks.metadata` JSON): `channel_id`, `channel_name`, `author_id`, `author_name`, `timestamp`, `thread_ts`, `entity_ids`.
 
 Entity ID resolution: the connector attempts to resolve `author_id` (Slack user ID) and any `@mentions` in the message text to canonical entity UUIDs via the entity alias graph.
 
@@ -71,9 +71,7 @@ For private channel access, the bot must be **manually invited** to each opted-i
 ```
 SLACK_BOT_TOKEN=               # xoxb- token
 DATABASE_URL=
-PINECONE_API_KEY=
-PINECONE_INDEX_NAME=
-VOYAGE_API_KEY=
+OPENAI_API_KEY=                # for text-embedding-3-large embeddings
 GOOGLE_SERVICE_ACCOUNT_JSON=   # to read the opt-in file from Drive
 GOOGLE_DRIVE_FOLDER_ID=        # same Drive folder, for slack-private-channels.txt
 ```

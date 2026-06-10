@@ -1,6 +1,6 @@
 # Notion Connector
 
-**Status:** Planned — awaiting credentials
+**Status:** ✅ Live — meeting transcript sync implemented
 **Destination tables:** `document_chunks` (with embeddings)
 **Source of:** Meeting transcripts (V1). Future Notion content types (knowledge base, policy pages) can extend the same connector.
 **Schedule:** Daily via EventBridge cron in production

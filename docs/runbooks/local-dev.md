@@ -29,7 +29,7 @@ pnpm db:seed
 
 # 6. Verify
 pnpm -r typecheck
-pnpm test                   # 28 tests; entity-resolution + MCP integration suites need step 2 running
+pnpm test                   # 42 tests; entity-resolution + MCP integration suites need step 2 running
 ```
 
 ## Running the apps
@@ -86,16 +86,17 @@ If `SYNC_SECRET` is set in `.env`, the `/mcp` endpoint requires `Authorization: 
 
 Each connector exposes a CLI:
 ```bash
-pnpm sync:sheets       # google-sheets
-pnpm sync:drive        # google-drive
-pnpm sync:bigquery     # bigquery
-pnpm sync:givebutter   # givebutter
-pnpm sync:aplos        # aplos
-pnpm sync:slack        # slack
-pnpm sync:roam         # roam
+pnpm sync:sheets       # google-sheets (live — 12 syncs)
+pnpm sync:givebutter   # givebutter (live)
+pnpm sync:aplos        # aplos (live)
+pnpm sync:notion       # notion meeting transcripts (live)
+pnpm sync:drive        # google-drive (skeleton)
+pnpm sync:bigquery     # bigquery (skeleton)
+pnpm sync:slack        # slack (skeleton)
+pnpm sync:roam         # roam (skeleton)
 ```
 
-All currently return `status: "noop"` until their per-connector implementation lands. Each run writes a row to `sync_runs` — visible in HQ at `/sync`.
+Live connectors sync real data when credentials are set. Skeleton connectors return `status: "noop"`. Each run writes a row to `sync_runs` — visible in HQ at `/sync`.
 
 ## Smoke-test the full pipeline
 
@@ -120,6 +121,8 @@ Production-shaped images are buildable today:
 ```bash
 docker build -f apps/hq/Dockerfile -t lp-hq:dev .
 docker build -f apps/mcp-server/Dockerfile -t lp-mcp:dev .
+docker build -f apps/aws-mcp-server/Dockerfile -t lp-aws-mcp:dev .
+docker build -f apps/sync/Dockerfile -t lp-sync:dev .
 ```
 
 Run them against the same Docker Postgres:
@@ -149,14 +152,14 @@ docker run --rm -p 8091:8080 \
 
 ## Known things that won't work without credentials
 
-- `pnpm sync:sheets` / `:drive` — require `GOOGLE_SERVICE_ACCOUNT_JSON`
-- `pnpm sync:bigquery` — requires Google service account + BigQuery access
-- `pnpm sync:givebutter` — requires `GIVEBUTTER_API_KEY`
-- `pnpm sync:aplos` — requires `APLOS_CLIENT_ID` + `APLOS_API_KEY`
+- `pnpm sync:drive` — requires `GOOGLE_SERVICE_ACCOUNT_JSON` (creds available but connector is skeleton)
+- `pnpm sync:bigquery` — requires Google service account + BigQuery access (creds available but connector is skeleton)
 - `pnpm sync:slack` — requires `SLACK_BOT_TOKEN`
 - `pnpm sync:roam` — requires `ROAM_API_KEY` + `ROAM_GRAPH_NAME`
 - MCP tools that embed (`search_documents`, `search_conversations`, `search_by_person`) — require `OPENAI_API_KEY`
 - AWS Secrets Manager fetch path — requires `USE_AWS_SECRETS=true` and an authenticated AWS environment
-- Google OAuth sign-in to HQ — requires `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET`
+- Google OAuth sign-in to HQ — requires `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` (or set `HQ_DEV_NO_AUTH=true`)
+
+**Connectors that are live with credentials:** `sync:sheets`, `sync:givebutter`, `sync:aplos`, `sync:notion`.
 
 Everything else above works against a clean clone.

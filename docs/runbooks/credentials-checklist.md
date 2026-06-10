@@ -7,7 +7,7 @@ What credentials to request, from whom, and what each one unlocks. Suggested gat
 | # | Credential | Who can provide | Unlocks | Local-dev workaround |
 |---|---|---|---|---|
 | 1 | AWS IAM user (admin or specific policy) | AWS account admin | All AWS phases (RDS, ECS, EventBridge, Secrets Manager, S3/Athena) | Docker Postgres works for everything except the production deploy |
-| 2 | `OPENAI_API_KEY` | OpenAI billing-account owner | Embedding generation; `search_documents`, `search_conversations`, `search_by_person` MCP tools | Other 11 MCP tools work without it |
+| 2 | `OPENAI_API_KEY` | OpenAI billing-account owner | Embedding generation; `search_documents`, `search_conversations`, `search_by_person` MCP tools | Other 13 MCP tools work without it |
 | 3 | `ANTHROPIC_API_KEY` | Anthropic billing-account owner | Only needed for systems that *call* Claude directly. The MCP server is *called by* Claude (via Claude Desktop or claude.ai), so MCP itself does not need this key. | n/a |
 | 4 | Google OAuth client (`AUTH_GOOGLE_ID` + `AUTH_GOOGLE_SECRET`) | Google Workspace admin (launchpadphilly.org) | HQ dashboard sign-in | Disable middleware locally to view pages without auth |
 | 5 | Google service account (`GOOGLE_SERVICE_ACCOUNT_JSON`) + Sheet IDs + Drive folder ID | Google Workspace admin | `google-sheets`, `google-drive`, `bigquery` connectors | Seed script provides sample data |
@@ -15,8 +15,10 @@ What credentials to request, from whom, and what each one unlocks. Suggested gat
 | 7 | `APLOS_CLIENT_ID` + `APLOS_API_KEY` | Launchpad Aplos account owner | `aplos` connector + `get_finance_brief` Aplos sections | Finance snapshots from seed |
 | 8 | `SLACK_BOT_TOKEN` + `SLACK_SIGNING_SECRET` | Launchpad Slack admin | `slack` connector + `search_conversations` Slack source | Drive-only `search_conversations` until Slack lands |
 | 9 | `ROAM_API_KEY` + `ROAM_GRAPH_NAME` | Roam workspace owner | `roam` connector | n/a |
-| 10 | `SENTRY_DSN_HQ` + `SENTRY_DSN_MCP` | Sentry workspace owner | Production error monitoring | Local errors print to stderr |
-| 11 | `SYNC_SECRET` | Generated; share between EventBridge + the ECS MCP service | Bearer auth on the MCP server's `/mcp` HTTP endpoint | Endpoint is unauthed when unset |
+| 10 | `NOTION_API_KEY` + `NOTION_MEETING_TRANSCRIPTS_DB_ID` | Notion workspace admin | `notion` connector — meeting transcripts → pgvector | n/a |
+| 11 | `SENTRY_DSN_HQ` + `SENTRY_DSN_MCP` | Sentry workspace owner | Production error monitoring | Local errors print to stderr |
+| 12 | `SYNC_SECRET` | Generated; share between EventBridge + the ECS MCP service | Bearer auth on the MCP server's `/mcp` HTTP endpoint | Endpoint is unauthed when unset |
+| 13 | MCP OAuth (`MCP_OAUTH_ISSUER`, `JWT_PRIVATE_KEY`, `JWT_KID`) | Generated during Phase 23 setup | MCP OAuth 2.0 PKCE flow for tool-level access control | Tools accessible without OAuth when unset |
 
 ## Recommended order
 
@@ -28,7 +30,7 @@ What credentials to request, from whom, and what each one unlocks. Suggested gat
    - Request: an IAM user (or SSO role) with permissions for RDS, ECS, Secrets Manager, EventBridge, S3, IAM (for ECS task role creation). Phase 1 setup guide ([docs/setup/01-aws-baseline.md](../setup/01-aws-baseline.md)) has the policy template.
 
 2. **OpenAI API key (#2)**
-   - Unlocks 3 of 14 MCP tools (everything that needs query embedding).
+   - Unlocks 3 of 16 MCP tools (everything that needs query embedding).
    - Independent of AWS; can be activated immediately.
    - Cost note: `text-embedding-3-large` is ~$0.13 / 1M tokens. Initial backfill of Drive docs + Slack history is likely under $5.
    - Request: `OPENAI_API_KEY` from the existing OpenAI organization, or create a new account at platform.openai.com.
@@ -73,8 +75,10 @@ All credentials are added to `.env` locally (which is gitignored) and to AWS Sec
 | `APLOS_CLIENT_ID` / `APLOS_API_KEY` | `.env` | Secrets Manager `lp-internal/aplos` |
 | `SLACK_BOT_TOKEN` / `SLACK_SIGNING_SECRET` | `.env` | Secrets Manager `lp-internal/slack` |
 | `ROAM_API_KEY` / `ROAM_GRAPH_NAME` | `.env` | Secrets Manager `lp-internal/roam` |
+| `NOTION_API_KEY` / `NOTION_MEETING_TRANSCRIPTS_DB_ID` | `.env` | Secrets Manager `lp-internal/notion` |
 | `SENTRY_DSN_HQ` / `SENTRY_DSN_MCP` | `.env` | Secrets Manager `lp-internal/sentry` |
 | `SYNC_SECRET` | `.env` | Secrets Manager `lp-internal/sync` |
+| `MCP_OAUTH_ISSUER` / `JWT_PRIVATE_KEY` / `JWT_KID` | `.env` | Secrets Manager `lp-internal/mcp-oauth` |
 
 Once `USE_AWS_SECRETS=true` in production, `packages/config` fetches all of these from Secrets Manager on startup and validates them through the Zod schema before any business logic runs.
 

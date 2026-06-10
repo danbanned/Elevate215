@@ -1,209 +1,104 @@
 # Postgres Database Schema
 
-ORM: Drizzle ORM. All schema definitions live in `packages/db/schema.ts`. Migrations are generated with `drizzle-kit generate` and applied with `drizzle-kit migrate`.
+ORM: **Prisma**. The schema lives in `packages/db/prisma/schema.prisma`. The generated Prisma client is output to `packages/db/generated/prisma/` (non-standard path). Migrations are created with `pnpm --filter @lp-ai/lib-db migrate:dev` and applied with `pnpm db:migrate`.
 
-## Tables
+Extensions: `pgvector` (vector similarity), `pg_trgm` (trigram fuzzy matching).
 
-### `students`
+## Tables (30 models)
 
-Canonical student records. Sourced from the `Students` tab of the "Student Information for Launchpad LLMs" Google Sheet.
+### Student & Staff Core
 
-**PII exclusions:** `dob`, `hasDisability`, `iep504`, and `phone` are never read or persisted. The connector enforces this via `STUDENTS_ALLOWED_COLS` (column-index allowlist).
+#### `students`
 
-```sql
-CREATE TABLE students (
-  id                        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  canonical_name            TEXT NOT NULL,
-  student_id                TEXT UNIQUE,            -- LP#### format
-  email                     TEXT,
-  gender                    TEXT,
-  race_ethnicity            TEXT,
-  school_name               TEXT,
-  hs_graduation_year        INTEGER,
-  entry_date                DATE,
-  withdrawal_date           DATE,
-  withdrawal_code           TEXT,
-  zip                       TEXT,
-  left_before_hs_grad       BOOLEAN,
-  completed_phase           BOOLEAN,
-  interview_score           NUMERIC(5,2),
-  tech_interest_onboarding  INTEGER,
-  interview_passion_score   INTEGER,
-  interview_college_score   INTEGER,
-  hs_gpa                    NUMERIC(4,2),
-  algebra1_grade            TEXT,
-  geometry_grade            TEXT,
-  college_enroll            TEXT,
-  university                TEXT,
-  major                     TEXT,
-  income                    TEXT,
-  parental_ed               TEXT,
-  created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at                TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+Canonical student records. Sourced from the `Students` tab of the "Student Information for Launchpad LLMs" Google Sheet (V1 and V2 versions).
 
-CREATE INDEX idx_students_student_id ON students(student_id);
-CREATE INDEX idx_students_canonical_name ON students(canonical_name);
-```
+**PII exclusions:** `dob` is stored but was historically excluded; `phone` is stored but should not be exposed via MCP tools. The connector enforces column-level allowlists.
 
-### `staff`
+Key columns: `id` (UUID PK), `student_number` (LP#### format, unique), `canonical_name`, `email`, `current_phase`, `enrollment_status`, `cohort`, `gender`, `race_ethnicity`, `school_name`, `hs_graduation_year`, `entry_date`, `withdrawal_date`, `withdrawal_code`, plus academic scores (`interview_score`, `hs_gpa`, `algebra1_grade`, `geometry_grade`), post-program fields (`college_enroll`, `university`, `major`), and V2 additions (`dob`, `suffix`, `rapid_account_number`, `algebra_keystone_score`, `works_outside_launchpad`, etc.).
 
-Canonical staff records.
+Indexes: `canonical_name`, `cohort`.
 
-```sql
-CREATE TABLE staff (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  canonical_name  TEXT NOT NULL,
-  email           TEXT UNIQUE,
-  role            TEXT,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
+#### `staff`
 
-### `entity_aliases`
+Canonical staff records. Minimal: `id` (UUID PK), `canonical_name`, `email`, `role`.
+
+Index: `canonical_name`.
+
+#### `entity_aliases`
 
 Maps every known name/handle/ID for a student or staff member back to their canonical record. This is the entity resolution graph.
 
-```sql
-CREATE TABLE entity_aliases (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  entity_type     TEXT NOT NULL CHECK (entity_type IN ('student', 'staff')),
-  entity_id       UUID NOT NULL,          -- FK to students.id or staff.id
-  source          TEXT NOT NULL,          -- 'slack', 'bigquery', 'drive', 'manual'
-  alias           TEXT NOT NULL,          -- the raw name/handle/ID as it appears in source
-  confidence      NUMERIC(3,2) NOT NULL DEFAULT 1.00,  -- 0.00–1.00
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+Key columns: `id` (UUID PK), `alias`, `entity_type` ('student' | 'staff'), `student_id` (FK → students), `staff_id` (FK → staff), `source`, `confidence` (0.00–1.00, default 1.0).
 
-CREATE UNIQUE INDEX idx_entity_aliases_source_alias ON entity_aliases(source, alias);
-CREATE INDEX idx_entity_aliases_entity ON entity_aliases(entity_type, entity_id);
-```
+Unique constraint: `(alias, entity_type)`. Index: `entity_type`.
 
-### `attendance_records`
+#### `pending_aliases`
 
-Unified storage for the three Launchpad cohort attendance sheets. Each sheet has a different shape (Cohort 1 weekly aggregates with `Percentage`; Cohort 2 daily P/A/E codes; Cohort 3 weekly check-in/out logs with codes); common fields are promoted to columns and the full source row is preserved on `row_data` for cohort-specific fields.
+Aliases that couldn't be auto-resolved (fuzzy confidence < 0.85). Queued for manual review.
 
-Linkage to the students table is via `student_number` (LP####), which joins to `students.student_id`.
+Key columns: `id` (UUID PK), `alias`, `entity_type`, `source`, `context`.
 
-V0.2 transition: when the BigQuery connector ships, this table will be re-populated from BigQuery's authoritative attendance data, and the same `query_attendance` tool will read from it.
+### Student Outcomes & Competency
 
-```sql
-CREATE TABLE attendance_records (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  cohort          INTEGER NOT NULL,        -- 1 | 2 | 3
-  student_number  TEXT NOT NULL,           -- LP#### (joins students.student_id)
-  date            DATE,                    -- primary date for filtering (cohort 2/3 day; cohort 1 = Date or End Date)
-  start_date      DATE,                    -- cohort 1 only
-  end_date        DATE,                    -- cohort 1 only
-  code            TEXT,                    -- P / A / E (cohort 2 / 3); null on cohort 1
-  percentage      NUMERIC(5, 2),           -- cohort 1 only (0–100)
-  row_data        JSONB NOT NULL,          -- full source row (cohort-specific fields)
-  source_id       TEXT NOT NULL UNIQUE,
-  last_synced_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+#### `student_info`
 
-CREATE INDEX idx_attendance_student      ON attendance_records (student_number);
-CREATE INDEX idx_attendance_cohort_date  ON attendance_records (cohort, date);
-CREATE INDEX idx_attendance_date         ON attendance_records (date);
-```
+Drive document content per student. Key columns: `id` (UUID PK), `student_id` (FK → students), `drive_file_id`, `content`, `synced_at`.
 
-**Notes:**
-- Cohorts are loose Launchpad student groupings (not graduation-year fixed); a student may appear in more than one cohort over time as they accelerate. The `cohort` column reflects the source sheet, not a hard student attribute.
-- `row_data` preserves cohort-specific fields the parser doesn't promote to columns: `learning_exp`, `teacher`, `check_in` / `check_out` (cohort 2 decimal times), `stu_exp_start_time` / `stu_exp_end_time`, `stu_exp_time_spent`, `act_time_spent`, `portfolio`, `check_in_or_out` (cohort 3 only), `time` (cohort 3 only). Internal sheet metadata (`sheet_name`, `sheet_id`, `spreadsheet_name`, `spreadsheet_id`, `teacher_posting_date`) is excluded at ingest. Cohort 3's `exp_start_time` / `exp_end_time` are also excluded — superseded by `stu_exp_*`.
+#### `student_certifications`
 
-### `student_phase_outcomes`
+Phase completion records. Sourced from the `Certifications` tab. Key columns: `id` (UUID PK), `source_id` (unique, e.g. SP001), `student_id` (FK → students), `type`, `date`, `result`, `score`, `phase`.
 
-Program phase progression per student. Sourced from columns F–Q of the `Students` tab of the "Student Information for Launchpad LLMs" Google Sheet (the separate `Outcomes` tab is redundant and skipped). One row per student (upsert on `student_id`).
+Indexes: `student_id`, `phase`, `type`, `date`.
 
-```sql
-CREATE TABLE student_phase_outcomes (
-  id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  student_id              UUID NOT NULL REFERENCES students(id) UNIQUE,
-  foundations_status      TEXT,
-  foundations_start_date  DATE,
-  foundations_end_date    DATE,
-  phase_101_status        TEXT,
-  phase_101_start_date    DATE,
-  phase_101_end_date      DATE,
-  lightspeed_status       TEXT,
-  lightspeed_start_date   DATE,
-  lightspeed_end_date     DATE,
-  liftoff_status          TEXT,
-  liftoff_start_date      DATE,
-  liftoff_end_date        DATE,
-  last_synced_at          TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+#### `student_phase_outcomes`
 
-CREATE INDEX idx_phase_outcomes_student ON student_phase_outcomes(student_id);
-```
+Program phase progression per student. One row per student (upsert on `student_id`, unique). Phases: Foundations, Phase 101, Lightspeed, LiftOff — each with `status`, `start_date`, `end_date`.
 
-### `student_certifications`
+Index: `student_id`.
 
-One row per phase completion record. Sourced from the `Certifications` tab of the "Student Information for Launchpad LLMs" Google Sheet. `source_id` is the sheet's `id` column (e.g. `SP001`). Tracks phase-level completion/withdrawal — not exam scores.
+#### `student_competencies`
 
-```sql
-CREATE TABLE student_certifications (
-  id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  source_id               TEXT NOT NULL UNIQUE,       -- e.g. SP001
-  student_id              UUID NOT NULL REFERENCES students(id),
-  phase                   TEXT NOT NULL,              -- Foundations, 101, Lightspeed, LiftOff
-  status                  TEXT NOT NULL,              -- Completed, Dropped Before Completion, etc.
-  start_date              DATE,
-  end_date                DATE,
-  phase_withdrawal_code   TEXT,
-  last_synced_at          TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+Per-student competency assessments. Key columns: `id` (UUID PK), `source_id` (unique), `student_number`, `competency`, `portfolio`, `baseline`, `performance_level`, `growth`, `progress`, `total_er`, `completed_er`, `missed_er`, `total_opportunities`.
 
-CREATE INDEX idx_certifications_student ON student_certifications(student_id);
-CREATE INDEX idx_certifications_phase ON student_certifications(phase);
-```
+Indexes: `student_number`, `competency`.
 
-### `beacon_outcomes` — V0.2 only
+#### `student_employment`
 
-Beacon competency outcomes synced from BigQuery. Not created during V0.1. Coexists with `student_phase_outcomes` — they track different things.
+Post-program employment data. Key columns: `id` (UUID PK), `source_id` (unique), `student_number` (FK → students via student_number), `employer_name`, `employment_type`, `job_title`, `start_date`, `end_date`, `hourly_wage`, `weekly_hours`, `total_earned`, `exit_code`, `notes`.
 
-### `sync_log`
+Indexes: `student_number`, `employer_name`, `exit_code`.
 
-One row per connector sync run. Used by HQ dashboard.
+#### `student_postsecondary`
 
-```sql
-CREATE TABLE sync_log (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  connector       TEXT NOT NULL,          -- 'bigquery', 'google-drive', 'google-sheets', 'slack', 'notion', 'aplos', 'givebutter', 'roam'
-  started_at      TIMESTAMPTZ NOT NULL,
-  finished_at     TIMESTAMPTZ,
-  status          TEXT NOT NULL CHECK (status IN ('running', 'success', 'error')),
-  records_synced  INTEGER DEFAULT 0,
-  error_message   TEXT
-);
+College enrollment tracking from National Student Clearinghouse. Key columns: `id` (UUID PK), `source_id` (unique), `student_number` (FK → students), `institution`, `institution_length`, `institution_type`, `enrollment_begin`, `enrollment_end`, `enrollment_status` (F/Q/H/L/A/W/D codes), `class_level` (F/S/J/R/C/N/B/M/D/P/L/G/A/T codes), `enrollment_major_1`, `enrollment_major_2`, `graduated`, `graduation_date`, `degree_title`, `degree_major_1/2/3`.
 
-CREATE INDEX idx_sync_log_connector ON sync_log(connector, started_at DESC);
-```
+Indexes: `student_number`, `institution`, `enrollment_status`.
 
-### `usage_log`
+### Operational Data
 
-One row per MCP tool call. Used by HQ dashboard for adoption reporting.
+#### `enrollment_snapshots`
 
-```sql
-CREATE TABLE usage_log (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tool_name       TEXT NOT NULL,
-  caller_identity TEXT,                   -- email or Slack handle if determinable
-  called_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-  duration_ms     INTEGER,
-  success         BOOLEAN NOT NULL DEFAULT true
-);
+Monthly enrollment counts by phase. Key columns: `source_id` (PK), `period_month` (Date), `phase`, `count`.
 
-CREATE INDEX idx_usage_log_tool ON usage_log(tool_name, called_at DESC);
-CREATE INDEX idx_usage_log_caller ON usage_log(caller_identity, called_at DESC);
-```
+Indexes: `period_month`, `phase`.
 
-### `finance_snapshots`
+#### `attendance_records`
 
-Generic JSONB store for tabular financial and CRM data ingested from multiple Google Sheets. Each row is one source-sheet row; column shapes vary by tab and the parser preserves them as a `row_data` JSON object keyed by snake_case column names.
+Unified storage for three Launchpad cohort attendance sheets. Each cohort has a different shape; common fields are promoted to columns and the full source row is preserved in `row_data`.
 
-**Tabs ingested into this table:**
+Key columns: `id` (UUID PK), `source_id` (unique), `cohort` (1|2|3), `student_number` (LP####), `date`, `start_date`, `end_date`, `code` (P/A/E), `percentage` (cohort 1 only), `row_data` (JSON).
+
+Indexes: `student_number`, `(cohort, date)`, `date`.
+
+#### `finance_snapshots`
+
+Generic JSON store for tabular financial and CRM data ingested from multiple Google Sheets. Each row is one source-sheet row; column shapes vary by tab.
+
+Key columns: `id` (UUID PK), `source_id` (unique, format `"{tab_name}:{rowNumber}"`), `tab_name`, `period`, `row_data` (JSON).
+
+Indexes: `tab_name`, `period`.
+
+**Tabs ingested:**
 
 | Source sheet | Stored `tab_name` values |
 |---|---|
@@ -215,163 +110,128 @@ Generic JSONB store for tabular financial and CRM data ingested from multiple Go
 | PEX stipends | `pex:Dashboard`, `pex:FY2022`, `pex:FY2023`, `pex:FY2024`, `pex:FY2025`, `pex:FY2026` |
 | Building21 Development CRM | `development:contacts`, `development:giving history`, `development:prospect pipeline`, `development:denied`, `development:launchpad pipeline`, `development:grants tracker` |
 
-Attendance is **not** stored here — see `attendance_records` (own table with structured columns + indexes).
+### Donor / Finance
 
-`source_id` format: `"{tab_name}:{rowNumber}"`. Upsert key.
+#### `donor_contacts`
 
-```sql
-CREATE TABLE finance_snapshots (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tab_name        TEXT NOT NULL,
-  period          TEXT,                   -- inferred from tab or row content, e.g. 'March 2026'
-  row_data        JSONB NOT NULL,         -- raw column→value map for the row
-  source_id       TEXT NOT NULL UNIQUE,
-  last_synced_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+Donor contact records from GiveButter + Development CRM. Key columns: `id` (UUID PK), `givebutter_contact_id`, `first_name`, `last_name`, `email`, `phone`, `organization_name`, `synced_at`.
 
-CREATE INDEX idx_finance_snapshots_tab ON finance_snapshots(tab_name);
-CREATE INDEX idx_finance_snapshots_period ON finance_snapshots(period);
-```
+Relations: `gifts` (DonorGift[]), `pipeline` (DonorPipeline[]).
 
-### `aplos_transactions`
+Index: `organization_name`.
 
-Individual income/expense transactions from Aplos.
+#### `donor_gifts`
 
-```sql
-CREATE TABLE aplos_transactions (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  aplos_id        TEXT NOT NULL UNIQUE,
-  transaction_date DATE NOT NULL,
-  type            TEXT NOT NULL CHECK (type IN ('income', 'expense')),
-  amount_cents    INTEGER NOT NULL,
-  fund_id         TEXT,
-  fund_name       TEXT,
-  account_code    TEXT,
-  account_name    TEXT,
-  contact_name    TEXT,
-  memo            TEXT,
-  tags            TEXT[],
-  last_synced_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+Individual gift records. Key columns: `id` (UUID PK), `donor_contact_id` (FK → donor_contacts), `givebutter_tx_id`, `amount` (Float), `gift_date`, `campaign_name`, `fund`, `is_recurring`.
 
-CREATE INDEX idx_aplos_transactions_date ON aplos_transactions(transaction_date);
-CREATE INDEX idx_aplos_transactions_fund ON aplos_transactions(fund_id);
-CREATE INDEX idx_aplos_transactions_type ON aplos_transactions(type);
-```
+#### `donor_pipeline`
 
-### `aplos_fund_balances`
+Donor prospect pipeline stages. Key columns: `id` (UUID PK), `donor_contact_id` (FK → donor_contacts), `stage`, `ask_amount`, `likelihood`, `notes`.
 
-Daily balance snapshots per fund from Aplos. A new row is written each sync day.
+#### `donor_grants`
 
-```sql
-CREATE TABLE aplos_fund_balances (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  fund_id         TEXT NOT NULL,
-  fund_name       TEXT NOT NULL,
-  balance_cents   INTEGER NOT NULL,
-  snapshot_date   DATE NOT NULL,
-  last_synced_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (fund_id, snapshot_date)
-);
+Grant tracking records. Key columns: `id` (UUID PK), `funder`, `amount`, `status`, `deadline`, `award_date`, `fund`, `notes`.
 
-CREATE INDEX idx_aplos_fund_balances_date ON aplos_fund_balances(snapshot_date DESC);
-```
+### Vector Search & Logging
 
-### `aplos_budget_items`
+#### `document_chunks`
 
-Budget vs. actual amounts per account/fund/period from Aplos.
+Embedded document chunks for semantic search. Key columns: `id` (UUID PK), `source` ('notion', 'drive', 'slack', etc.), `source_id`, `title`, `content`, `embedding` (vector(1536) via pgvector), `metadata` (JSON), `synced_at`.
 
-```sql
-CREATE TABLE aplos_budget_items (
-  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  account_code        TEXT NOT NULL,
-  account_name        TEXT,
-  fund_id             TEXT,
-  fund_name           TEXT,
-  period              TEXT NOT NULL,             -- e.g. "2024-Q1" or "FY2024"
-  budget_amount_cents INTEGER NOT NULL DEFAULT 0,
-  actual_amount_cents INTEGER NOT NULL DEFAULT 0,
-  variance_cents      INTEGER GENERATED ALWAYS AS (budget_amount_cents - actual_amount_cents) STORED,
-  last_synced_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (account_code, fund_id, period)
-);
-```
+Index: `(source, source_id)`.
 
-### `givebutter_donations`
+#### `usage_logs`
 
-Individual donation transactions from Give Butter.
+MCP tool call audit log. Every tool invocation is recorded. Key columns: `id` (UUID PK), `tool_name`, `input_json`, `output_json`, `duration_ms`, `error`, `called_at`, `anthropic_user_id`, `anthropic_user_email`, `anthropic_workspace`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_creation_tokens`, `model`.
 
-```sql
-CREATE TABLE givebutter_donations (
-  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  givebutter_id       TEXT NOT NULL UNIQUE,
-  campaign_id         TEXT,
-  campaign_name       TEXT,
-  donor_id            TEXT,
-  donor_name          TEXT,
-  amount_cents        INTEGER NOT NULL,
-  fee_cents           INTEGER DEFAULT 0,
-  net_amount_cents    INTEGER NOT NULL,
-  giving_type         TEXT,                      -- 'one-time', 'recurring'
-  note                TEXT,
-  donated_at          TIMESTAMPTZ NOT NULL,
-  last_synced_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+Indexes: `tool_name`, `called_at`, `anthropic_user_id`, `anthropic_user_email`.
 
-CREATE INDEX idx_givebutter_donations_date ON givebutter_donations(donated_at);
-CREATE INDEX idx_givebutter_donations_campaign ON givebutter_donations(campaign_id);
-```
+#### `sync_runs`
 
-### `givebutter_campaigns`
+One row per connector sync run. Used by HQ dashboard `/sync` page.
 
-Campaign records from Give Butter.
+Key columns: `id` (UUID PK), `connector`, `status` ('ok' | 'error' | 'noop'), `started_at`, `finished_at`, `records_upserted` (default 0), `error`, `notes`.
 
-```sql
-CREATE TABLE givebutter_campaigns (
-  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  givebutter_id       TEXT NOT NULL UNIQUE,
-  title               TEXT NOT NULL,
-  status              TEXT,                      -- 'active', 'ended', 'draft'
-  goal_cents          INTEGER,
-  raised_cents        INTEGER NOT NULL DEFAULT 0,
-  donor_count         INTEGER NOT NULL DEFAULT 0,
-  url                 TEXT,
-  created_at          TIMESTAMPTZ,
-  ended_at            TIMESTAMPTZ,
-  last_synced_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
+Index: `(connector, started_at)`.
 
-### `givebutter_donors`
+### Auth (NextAuth v5)
 
-Donor contact and aggregate giving records from Give Butter. Contains contact info — handle with care.
+#### `users`
 
-```sql
-CREATE TABLE givebutter_donors (
-  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  givebutter_id         TEXT NOT NULL UNIQUE,
-  first_name            TEXT,
-  last_name             TEXT,
-  email                 TEXT,                    -- sensitive; do not expose via MCP tools
-  phone                 TEXT,                    -- sensitive; do not expose via MCP tools
-  total_donated_cents   INTEGER NOT NULL DEFAULT 0,
-  donation_count        INTEGER NOT NULL DEFAULT 0,
-  first_donation_at     TIMESTAMPTZ,
-  last_donation_at      TIMESTAMPTZ,
-  last_synced_at        TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+NextAuth user records for HQ sign-in. Key columns: `id` (cuid PK), `name`, `email` (unique), `email_verified`, `image`.
 
-CREATE INDEX idx_givebutter_donors_email ON givebutter_donors(email);
-```
+#### `accounts`
+
+OAuth provider accounts linked to users. Unique: `(provider, provider_account_id)`.
+
+#### `sessions`
+
+NextAuth sessions. Key column: `session_token` (unique).
+
+#### `verification_tokens`
+
+Email verification tokens. Unique: `(identifier, token)`.
+
+### MCP OAuth 2.0 (Phase 23)
+
+These tables gate MCP tool access independently of HQ auth.
+
+#### `mcp_users`
+
+MCP OAuth users, keyed by email. Key columns: `email` (PK), `status` (PENDING | ACTIVE | DISABLED), `roles` (String[]), `last_login`.
+
+Index: `status`.
+
+#### `oauth_clients`
+
+Registered OAuth client applications. Key columns: `client_id` (PK), `client_name`, `redirect_uris` (String[]), `token_lifetime_s` (default 3600).
+
+#### `oauth_authorization_codes`
+
+PKCE authorization codes for the OIDC flow. Key columns: `code` (PK), `client_id`, `user_email`, `redirect_uri`, `code_challenge`, `scopes` (String[]), `expires_at`, `used_at`.
+
+Index: `expires_at`.
+
+#### `oauth_refresh_tokens`
+
+Refresh token storage. Key columns: `token_id` (PK), `client_id`, `user_email`, `expires_at`, `revoked_at`.
+
+Indexes: `user_email`, `expires_at`.
+
+#### `tool_permissions`
+
+Tool-level ACL, editable from HQ `/admin`. The MCP server reads this table (cached ~60s) instead of a static TS registry, so admins can change who can call what without a code deploy.
+
+Key columns: `tool_name` (PK), `allowed_roles` (String[]), `category` ('students' | 'donor_finance' | 'search' | 'future' | 'other'), `description`.
+
+### AWS Infrastructure
+
+#### `aws_resource_jobs`
+
+AWS resource creation requests with approval workflow. Key columns: `id` (UUID PK), `developer`, `action_type` (CREATE | UPDATE | DELETE), `resource_type`, `parameters` (JSON), `plan_output`, `status` (PENDING_APPROVAL | APPROVED | REJECTED | IN_PROGRESS | SUCCEEDED | FAILED), `error`, `approver`.
+
+Indexes: `developer`, `status`.
 
 ## Migration Strategy
 
-- Migrations live in `packages/db/migrations/`
-- Generated via `pnpm db:generate` (wraps `drizzle-kit generate`)
-- Applied via `pnpm db:migrate` (wraps `drizzle-kit migrate`)
-- Railway runs `pnpm db:migrate` as a deploy step before starting any service
+- Schema source of truth: `packages/db/prisma/schema.prisma`
+- Prisma client output: `packages/db/generated/prisma/`
+- Config: `prisma.config.ts` (repo root)
+- Dev iteration: `pnpm db:push` (no migration file; uses `prisma db push`)
+- Production: `pnpm db:migrate` (tracked migrations via `prisma migrate deploy`)
+- Create new migration: `pnpm --filter @lp-ai/lib-db migrate:dev`
 - Never edit a migration file after it has been applied to any environment — create a new one instead
 
 ## Upsert Pattern
 
-All connectors use `INSERT ... ON CONFLICT (source_id) DO UPDATE SET ...` to make syncs idempotent. The `source_id` column holds the primary key from the upstream source.
+All connectors use Prisma's `upsert` method for idempotent syncs:
+
+```ts
+await prisma.student.upsert({
+  where: { studentNumber: row.studentNumber },
+  update: { ...row, updatedAt: new Date() },
+  create: row,
+});
+```
+
+The `source_id` or equivalent unique column holds the primary key from the upstream source.
