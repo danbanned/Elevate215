@@ -13,12 +13,12 @@
       }
     },
     {
-      "Sid": "PassSyncTaskRoles",
+      "Sid": "PassEcsTaskRoles",
       "Effect": "Allow",
       "Action": "iam:PassRole",
       "Resource": [
-        "arn:aws:iam::${AWS_ACCOUNT_ID}:role/lp-sync-task-role",
-        "arn:aws:iam::${AWS_ACCOUNT_ID}:role/lp-sync-execution-role"
+        "arn:aws:iam::${AWS_ACCOUNT_ID}:role/lp-ecs-task-role",
+        "arn:aws:iam::${AWS_ACCOUNT_ID}:role/lp-ecs-execution-role"
       ],
       "Condition": {
         "StringEquals": {
