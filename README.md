@@ -32,18 +32,20 @@ Four logical layers: **data sources → connectors → storage → MCP server + 
 │   outcomes,       student info)                                     │
 │   attendance,                             Slack         Roam        │
 │   finances)                               (channels)    (chat)      │
+│                                           Notion                    │
+│                                           (meeting transcripts)     │
 └───────────────────────┬─────────────────────────────────────────────┘
                         │  scheduled syncs (AWS EventBridge)
                         │  manual: pnpm sync:<name>
                         ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                     CONNECTORS  (7)                                 │
+│                     CONNECTORS  (9)                                 │
 │                                                                     │
 │  Each connector runs sync() → calls runSync() → writes to          │
 │  sync_runs table. Errors are captured; HQ dashboard shows status.  │
 │                                                                     │
 │  google-sheets  google-drive  bigquery  givebutter  aplos           │
-│  slack          roam                                                │
+│  slack          roam          notion                                │
 └───────────────────────┬─────────────────────────────────────────────┘
                         │
                         ▼
@@ -55,9 +57,11 @@ Four logical layers: **data sources → connectors → storage → MCP server + 
 │  │     students, staff, entity_aliases                              │
 │  │     student_phase_outcomes, student_certifications               │
 │  │     attendance_records, enrollment_snapshots                     │
-│  │     finance_snapshots, aplos_transactions                        │
-│  │     donor_contacts, donor_gifts, donor_pipeline                  │
-│  │     sync_runs, usage_log                                         │
+│  │     finance_snapshots                                            │
+│  │     donor_contacts, donor_gifts, donor_pipeline, donor_grants    │
+│  │     student_employment, student_postsecondary                    │
+│  │     sync_runs, usage_logs, aws_resource_jobs                     │
+│  │     mcp_users, oauth_clients, tool_permissions                   │
 │  └── Vector store (pgvector extension)                              │
 │        document_chunks  ←  OpenAI text-embedding-3-large            │
 │        (Google Drive docs + Slack + Roam → 1536-dim embeddings)     │
@@ -68,7 +72,7 @@ Four logical layers: **data sources → connectors → storage → MCP server + 
                         │
                         ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                   MCP SERVER  (14 tools)                            │
+│                   MCP SERVER  (16 tools)                            │
 │                                                                     │
 │  Exposes structured Prisma queries + pgvector semantic search       │
 │  as Model Context Protocol tools.                                   │
@@ -76,7 +80,7 @@ Four logical layers: **data sources → connectors → storage → MCP server + 
 │  Transport A: stdio  → Claude Desktop (local)                       │
 │  Transport B: Streamable HTTP → AWS ECS Fargate behind ALB (production) │
 │                                                                     │
-│  All tool calls are logged to usage_log for adoption tracking.      │
+│  All tool calls are logged to usage_logs for adoption tracking.     │
 │  All tools return structured { error: { code, message } } on fail. │
 └───────────────────────┬─────────────────────────────────────────────┘
                         │  MCP protocol
@@ -114,7 +118,7 @@ At query time, Claude calls MCP tools → the server runs Prisma queries or pgve
 | Concern | Technology | Notes |
 |---|---|---|
 | Language | TypeScript 5 (strict) | `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes` |
-| Monorepo | pnpm workspaces | 15 workspace packages |
+| Monorepo | pnpm workspaces | 17 workspace packages |
 | HQ Dashboard | Next.js 14 (App Router) | Standalone Docker image |
 | Auth | NextAuth v5 (Auth.js) | Google OAuth, domain-gated to `@launchpadphilly.org` |
 | MCP Server | `@modelcontextprotocol/sdk` | stdio + Streamable HTTP transports |
@@ -148,36 +152,46 @@ lp-internal-ai-v1/
 │   ├── hq/                          # Next.js 14 HQ dashboard
 │   │   ├── app/
 │   │   │   ├── page.tsx             # / — data freshness overview
+│   │   │   ├── dashboard/page.tsx   # /dashboard — analytic dashboard
 │   │   │   ├── sync/page.tsx        # /sync — connector sync run history
 │   │   │   ├── tools/page.tsx       # /tools — MCP tool call log
+│   │   │   ├── admin/page.tsx       # /admin — MCP OAuth + tool permissions
+│   │   │   ├── aws-jobs/[id]/       # /aws-jobs/:id — resource job details
 │   │   │   └── api/health/route.ts  # GET /api/health (unauthenticated)
 │   │   ├── auth.ts                  # NextAuth v5 config + Google provider
 │   │   ├── middleware.ts            # Route guard
 │   │   └── Dockerfile
-│   └── mcp-server/                  # MCP server — 14 tools
-│       ├── src/
-│       │   ├── index.ts             # Entry: stdio (Claude Desktop)
-│       │   ├── serve-http.ts        # Entry: Streamable HTTP (ECS Fargate)
-│       │   ├── make-server.ts       # Tool registration
-│       │   ├── usage-log.ts         # Logs every tool call
-│       │   └── tools/               # One file per MCP tool (14 files)
+│   ├── mcp-server/                  # MCP server — 16 tools
+│   │   ├── src/
+│   │   │   ├── index.ts             # Entry: stdio (Claude Desktop)
+│   │   │   ├── serve-http.ts        # Entry: Streamable HTTP (ECS Fargate)
+│   │   │   ├── make-server.ts       # Tool registration
+│   │   │   ├── usage-log.ts         # Logs every tool call
+│   │   │   └── tools/               # One file per MCP tool (16 files)
+│   │   └── Dockerfile
+│   ├── aws-mcp-server/              # AWS resource management MCP server
+│   │   └── Dockerfile
+│   └── sync/                        # One-off Fargate task runner for scheduled syncs
 │       └── Dockerfile
 ├── packages/
 │   ├── db/                          # @lp-ai/lib-db — Prisma client, schema, seed
 │   ├── config/                      # @lp-ai/lib-config — typed env loader
 │   └── embedding/                   # @lp-ai/lib-embedding — OpenAI batch helpers
-├── connectors/                      # One package per source (7 total)
-│   ├── givebutter/                  # ← REST client implemented
-│   └── google-sheets|drive|bigquery|aplos|slack|roam/   # skeletons
+├── connectors/                      # One package per source (9 total)
+│   ├── google-sheets/               # ✅ Live — 12 sheet syncs, 26K+ records
+│   ├── givebutter/                  # ✅ Live — REST client, donors/gifts/pipeline
+│   ├── aplos/                       # ✅ Live — RSA auth, 16K+ records
+│   ├── notion/                      # ✅ Live — meeting transcript sync + embeddings
+│   └── google-drive|bigquery|slack|roam/   # skeletons
 ├── infra/
 │   ├── postgres-init/               # SQL: CREATE EXTENSION pgvector, pg_trgm
 │   └── iam/                         # AWS IAM policy templates
 ├── docs/
 │   ├── architecture.md              # Detailed system overview
-│   ├── database-schema.md           # All 18 tables with columns + indexes
-│   ├── mcp-server-spec.md           # All 14 tool definitions (input/output schemas)
+│   ├── database-schema.md           # All 30 Prisma models with columns + indexes
+│   ├── mcp-server-spec.md           # All 16 tool definitions (input/output schemas)
 │   ├── entity-resolution.md         # Cross-source deduplication strategy
-│   ├── setup/                       # Phase-by-phase AWS setup guides (00–21)
+│   ├── setup/                       # Phase-by-phase AWS setup guides (00–22)
 │   ├── runbooks/                    # local-dev.md, credentials-checklist.md, aws-permissions.md
 │   ├── decisions/                   # Architecture Decision Records
 │   └── data-sources/                # Per-connector specs
@@ -207,6 +221,7 @@ pnpm resolves `workspace:*` references to local source at install time — no pu
       ├── @lp-ai/connector-google-drive    → lib-config, lib-db, lib-embedding
       ├── @lp-ai/connector-slack           → lib-config, lib-db, lib-embedding
       ├── @lp-ai/connector-roam            → lib-config, lib-db, lib-embedding
+      ├── @lp-ai/connector-notion          → lib-config, lib-db, lib-embedding
       ├── @lp-ai/hq                        → lib-config, lib-db
       ├── @lp-ai/mcp-server                → lib-config, lib-db, lib-embedding
       └── @lp-ai/aws-mcp-server            → lib-config, lib-db
@@ -221,14 +236,14 @@ pnpm resolves `workspace:*` references to local source at install time — no pu
 **Prerequisites:** Node ≥ 20, pnpm ≥ 9, Docker Desktop running.
 
 ```bash
-pnpm install                                              # all 15 packages
+pnpm install                                              # all 17 packages
 cp .env.example .env                                      # fill in values you have
 pnpm db:up                                                # start Postgres + pgvector
 pnpm db:generate                                          # generate Prisma client
 pnpm --filter @lp-ai/lib-db push --skip-generate          # apply schema
 pnpm db:seed                                              # 3 students, donors, finance, certs
 
-pnpm -r typecheck && pnpm test                            # verify: 31 tests
+pnpm -r typecheck && pnpm test                            # verify: 42 tests
 
 pnpm --filter @lp-ai/hq dev                               # HQ → http://localhost:3000
 pnpm --filter @lp-ai/mcp-server build
@@ -320,6 +335,8 @@ All tools return structured JSON. Errors use `{ error: { code, message } }`.
 | `query_certifications` | PCEP exam results and scores |
 | `query_competency` | Per-student Beacon competency scores |
 | `query_attendance` | Unified attendance across three cohort formats |
+| `query_employment` | Post-program employment data (employer, wages, hours, exit codes) |
+| `query_postsecondary` | College enrollment tracking (National Student Clearinghouse) |
 | `query_finances` | Budgets, actuals, forecasts, stipends, CRM giving/pipeline/grants |
 | `query_donors` | Building21 Development CRM donor lookup |
 | `search_conversations` | Semantic search over Drive docs (Slack/transcripts in V0.2) |
@@ -334,13 +351,14 @@ Full input/output schemas: [docs/mcp-server-spec.md](docs/mcp-server-spec.md)
 
 | Connector | Source | Destination | Status |
 |---|---|---|---|
-| `google-sheets` | Student Dashboard + Outcomes sheets | Postgres | Skeleton — needs `GOOGLE_SERVICE_ACCOUNT_JSON` |
-| `google-drive` | Drive docs folder | Postgres + pgvector | Skeleton — needs `GOOGLE_SERVICE_ACCOUNT_JSON` |
-| `bigquery` | `lp-internal-ai` BigQuery project | Postgres | Skeleton — needs Google service account |
-| `givebutter` | GiveButter donation platform | `donor_contacts`, `donor_gifts` | **REST client implemented** — needs `GIVEBUTTER_API_KEY` |
-| `aplos` | Aplos nonprofit accounting | Postgres | Skeleton — needs `APLOS_CLIENT_ID` + `APLOS_API_KEY` |
-| `slack` | Designated Slack channels | pgvector | Skeleton — needs `SLACK_BOT_TOKEN` |
-| `roam` | Roam chat / messaging | pgvector | Skeleton — needs `ROAM_API_KEY` |
+| `google-sheets` | Launchpad Dashboard + Outcomes sheets (12 spreadsheets) | Postgres | ✅ Live — all 12 syncs ported; 26K+ records |
+| `google-drive` | Drive docs folder | Postgres + pgvector | Skeleton — creds available, implementation pending |
+| `bigquery` | `lp-internal-ai` BigQuery project | Postgres | Skeleton — creds available, implementation pending |
+| `givebutter` | GiveButter donation platform | `donor_contacts`, `donor_gifts`, `donor_pipeline` | ✅ Live — REST client syncing |
+| `aplos` | Aplos nonprofit accounting | Postgres (finance snapshots) | ✅ Live — RSA-decryption auth; 16K+ records |
+| `notion` | Notion meeting transcripts database | `document_chunks` (pgvector) | ✅ Live — meeting transcripts with embeddings |
+| `slack` | Designated Slack channels | pgvector | Skeleton — awaiting `SLACK_BOT_TOKEN` |
+| `roam` | Roam chat / messaging | pgvector | Skeleton — awaiting `ROAM_API_KEY` |
 
 Each connector's `sync()` is wrapped by `runSync()`, which writes a success/error row to `sync_runs` on every run — visible in the HQ `/sync` page.
 
@@ -350,14 +368,19 @@ Each connector's `sync()` is wrapped by `runSync()`, which writes a success/erro
 
 | Area | State |
 |---|---|
-| Typecheck | ✅ All 15 packages pass |
-| Tests | ✅ 31 tests, 5 files (Vitest) |
+| Typecheck | ✅ All 17 packages pass |
+| Tests | ✅ 42 tests, 6 files (Vitest) |
 | Local DB | ✅ Postgres 16 + pgvector via Docker Compose |
-| MCP tools | ✅ All 14 wired to real Prisma queries |
-| HQ dashboard | ✅ Renders against live Postgres; auth gated |
-| GiveButter connector | ✅ Full REST client implemented |
-| Other 6 connectors | 🟡 Working skeletons — awaiting API credentials |
-| AWS production | 🟡 Docker images built; awaiting Phase 2 (RDS + ECS Fargate) |
+| MCP tools | ✅ All 16 wired to real Prisma queries |
+| HQ dashboard | ✅ Renders against live Postgres; auth gated; analytic dashboard ported |
+| Google Sheets connector | ✅ All 12 sheet syncs live; 26K+ records |
+| GiveButter connector | ✅ REST client syncing donors, gifts, pipeline |
+| Aplos connector | ✅ RSA-decryption auth; 16K+ records |
+| Notion connector | ✅ Meeting transcript sync with embeddings |
+| OpenAI embeddings | ✅ `text-embedding-3-large` verified and live |
+| AWS account | ✅ Account 851725317896, IAM user configured, us-east-1 |
+| Remaining connectors | 🟡 Skeletons — google-drive, bigquery, slack, roam |
+| AWS production | 🟡 Docker images + ECS task defs built; deployment in progress |
 | CI | ✅ GitHub Actions with pgvector service container |
 
 See [docs/runbooks/credentials-checklist.md](docs/runbooks/credentials-checklist.md) for credential requirements. See [docs/setup/README.md](docs/setup/README.md) for the phase-by-phase AWS production setup status.

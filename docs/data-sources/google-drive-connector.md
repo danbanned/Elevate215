@@ -6,7 +6,7 @@ Ingests two Google Drive documents that contain student information for use by t
 1. **"Student Information for Launchpad LLMs"** — structured student profiles + narrative notes
 2. **"Outcomes"** — structured outcome summaries
 
-Structured fields go to Postgres. Long narrative sections go to Pinecone.
+Structured fields go to Postgres. Long narrative sections go to pgvector (`document_chunks` table).
 
 ## Documents in Scope
 
@@ -14,8 +14,8 @@ Documents are identified by name pattern within a designated Drive folder (`GOOG
 
 | Document pattern | Structured destination | Unstructured destination |
 |---|---|---|
-| `Student Information for Launchpad LLMs` | `students`, `student_info` | Pinecone `drive_documents` |
-| `Outcomes` | `beacon_outcomes` (if structured) | Pinecone `drive_documents` |
+| `Student Information for Launchpad LLMs` | `students`, `student_info` | `document_chunks` (pgvector) |
+| `Outcomes` | `beacon_outcomes` (if structured) | `document_chunks` (pgvector) |
 
 ## Structured vs. Unstructured Split
 
@@ -23,7 +23,7 @@ Documents are identified by name pattern within a designated Drive folder (`GOOG
 - Tabular rows where each row = one student: name, ID, grade, cohort, IEP flag, ELL flag, interests list, goals list
 - Any field that is discrete and filterable belongs in Postgres
 
-### Goes to Pinecone (unstructured)
+### Goes to pgvector (unstructured)
 - Paragraph-length narrative notes about individual students
 - Free-form outcome summaries that don't fit a table schema
 - Any content that requires semantic search to retrieve
@@ -32,7 +32,7 @@ When in doubt: if you'd filter by it in a WHERE clause, it's structured. If you'
 
 ## Sync Schedule
 
-Railway cron: **hourly**
+AWS EventBridge: **hourly** (via `apps/sync` Fargate task)
 
 For manual triggering: `pnpm --filter google-drive sync`
 
@@ -44,15 +44,15 @@ For manual triggering: `pnpm --filter google-drive sync`
 
 ## Sync Logic (Step by Step)
 
-1. Write `sync_log` row with `status = 'running'`
+1. Write `sync_runs` row with `status = 'running'`
 2. List files in `GOOGLE_DRIVE_FOLDER_ID` matching document name patterns
 3. For each matching document:
    a. Export document as plain text (Google Docs API `export` endpoint)
    b. Parse the text to extract structured table rows (simple line-by-line parsing for V0)
    c. Upsert structured fields into Postgres (`students`, `student_info`, `beacon_outcomes`)
    d. Pass remaining narrative text through the [embedding pipeline](../embedding-pipeline.md)
-   e. Upsert chunks into Pinecone `drive_documents` namespace
-4. Update `sync_log`
+   e. Embed chunks via OpenAI `text-embedding-3-large` and upsert into `document_chunks` table
+4. Update `sync_runs`
 
 ## Entity Seeding (Special Case)
 
@@ -67,8 +67,8 @@ This must complete before the BigQuery connector's first run so student IDs can 
 ## Error Handling
 
 - Document not found → log warning, skip document, continue with others
-- Parse failures (unexpected document format) → log error with document name, skip to Pinecone embedding of full text as fallback
-- Auth failures → fail entire sync, write error to `sync_log`
+- Parse failures (unexpected document format) → log error with document name, skip to pgvector embedding of full text as fallback
+- Auth failures → fail entire sync, write error to `sync_runs`
 
 ## Environment Variables Required
 
@@ -76,9 +76,7 @@ This must complete before the BigQuery connector's first run so student IDs can 
 GOOGLE_SERVICE_ACCOUNT_JSON=   # base64-encoded service account JSON
 GOOGLE_DRIVE_FOLDER_ID=        # Drive folder ID containing the source documents
 DATABASE_URL=
-PINECONE_API_KEY=
-PINECONE_INDEX_NAME=
-VOYAGE_API_KEY=
+OPENAI_API_KEY=                # for text-embedding-3-large embeddings
 ```
 
 ## Connector Location

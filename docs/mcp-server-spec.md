@@ -1,41 +1,42 @@
 # MCP Server Spec
 
-## V0.1 vs V0.2 Tool Availability
+## Tool Availability
 
-The server currently exposes **13 tools**, all active in V0.1 — backed by Google Sheets and Google Drive connectors. No vector search (Pinecone/Voyage AI) is active in V0.1; semantic search tools operate over Postgres-stored document chunks.
+The server currently exposes **16 tools**, all active — backed by Google Sheets, GiveButter, Aplos, and Notion connectors. Semantic search uses pgvector with OpenAI `text-embedding-3-large` embeddings (1536 dimensions).
 
-**Active in V0.1 (13 tools):**
+**Active tools (16):**
 - `get_student_info` — Sheets student roster + Drive student info doc
-- `query_outcomes` — Outcomes tab in Student Information sheet (transitions to BigQuery in V0.2)
+- `query_outcomes` — Phase progression from Student Information sheet
 - `query_enrollment` — enrollment statistics by phase, school, cohort, race, date ranges, with full per-student profile filters
 - `query_certifications` — PCEP pass/fail results, scores, by phase
 - `query_students` — population statistics + filtered lists with full demographic, academic, and post-program filter set
 - `query_competency` — per-student competency scores and the rubric structure
 - `query_finances` — Launchpad Dashboard, Phase Budget Dashboard (incl. monthly LiftOff/HS), Phase Actuals 2025 + Q3 2026, Rapid + PEX stipends, **and Building21 Development CRM** (giving history, prospect pipeline, denied, Launchpad pipeline, grants tracker, contacts)
-- `query_donors` *(new)* — Building21 Development CRM donor lookup (list / profile / summary). Profile mode joins one donor's record to their gift history, pipeline, Launchpad-specific asks, and grants
-- `query_attendance` *(new — sheet-backed)* — three Launchpad cohort attendance sheets unified into `attendance_records`. By-student rates, aggregate breakdowns, raw event drill-downs. Will transition from sheets to BigQuery in V0.2 when the BigQuery connector ships
-- `search_conversations` — Drive documents only (Slack + Notion meeting transcripts deferred to V0.2)
+- `query_donors` — Building21 Development CRM donor lookup (list / profile / summary). Profile mode joins one donor's record to their gift history, pipeline, Launchpad-specific asks, and grants
+- `query_attendance` — three Launchpad cohort attendance sheets unified into `attendance_records`. By-student rates, aggregate breakdowns, raw event drill-downs
+- `query_employment` — post-program employment data (employer, wages, hours, exit codes) from the Employment tab
+- `query_postsecondary` — college enrollment tracking from National Student Clearinghouse data
+- `search_conversations` — semantic search over Drive docs + Notion meeting transcripts (pgvector)
 - `search_by_person` — document search scoped to a student or staff name
-- `get_entity_brief` — student profile + phase progression + certifications + recent Drive mentions; **also surfaces donor profile + giving history + pipeline + grants** when the named person matches a donor
-- `get_finance_brief` — partial; omits Aplos sections (V0.2)
+- `search_documents` — raw document chunk search with optional entity filter
+- `get_entity_brief` — student profile + phase progression + certifications + recent mentions; **also surfaces donor profile + giving history + pipeline + grants** when the named person matches a donor
+- `get_finance_brief` — fund balances + YTD income/expenses + campaigns + transactions
 
-**Deferred to V0.2:**
-- BigQuery-backed `query_attendance` (current sheet-based version replaces this until then)
-- Aplos integration in `get_finance_brief`
-- Slack and Notion meeting transcripts in `search_conversations` / `search_by_person`
-- Vector search (Voyage embeddings + Pinecone)
+**Still pending:**
+- BigQuery-backed `query_attendance` (current sheet-based version stands in)
+- Slack connector for `search_conversations`
 
 Composite tools (`get_entity_brief`, `get_finance_brief`) MUST gracefully omit sections whose underlying data source is not yet active, rather than erroring. Each section in the response should be optional and the tool should annotate which sources contributed.
 
 ## Overview
 
-The MCP server exposes 13 tools to Claude. It runs as a Node.js HTTP server using the `@modelcontextprotocol/sdk` package with SSE transport (or stdio for local desktop use). All tools are read-only — no writes to any data source.
+The MCP server exposes 16 tools to Claude. It runs as a Node.js HTTP server using the `@modelcontextprotocol/sdk` package with Streamable HTTP transport (or stdio for local desktop use). All tools are read-only — no writes to any data source.
 
-Every tool call is logged to the `usage_log` Postgres table (tool name, timestamp, duration, success flag).
+Every tool call is logged to the `usage_logs` Postgres table (tool name, timestamp, duration, caller identity, token usage).
 
-**Server location:** `apps/mcp-server/`  
-**Transport:** HTTP + Server-Sent Events (SSE)  
-**Base URL (Railway):** configured via `MCP_SERVER_URL` env var
+**Server location:** `apps/mcp-server/`
+**Transport:** Streamable HTTP (production on ECS Fargate behind ALB) + stdio (Claude Desktop)
+**Production URL:** `https://mcp.launchpadinc.org`
 
 ## Tool Definitions
 
@@ -137,6 +138,65 @@ Cohorts are loose Launchpad groupings; a student may move between cohorts as the
     { "id": "...", "cohort": 3, "studentNumber": "LP0181", "date": "2026-04-22",
       "code": "P", "rowData": { "learning_exp": "O1", "...": "..." } }
   ]
+}
+```
+
+---
+
+### `query_employment`
+
+Query post-program employment data from the `student_employment` table. Tracks employer, job title, wages, hours, and exit codes.
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "student_number": { "type": "string", "description": "LP#### — filter to one student." },
+    "employer": { "type": "string", "description": "Partial match on employer name." },
+    "employment_type": { "type": "string", "description": "Filter by type (e.g. Full-time, Part-time, Internship)." },
+    "exit_code": { "type": "string", "description": "Filter by exit code." }
+  },
+  "required": []
+}
+```
+
+---
+
+### `query_postsecondary`
+
+Query college enrollment data from the `student_postsecondary` table (National Student Clearinghouse). Tracks institution, enrollment status, class level, majors, and graduation.
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "student_number": { "type": "string", "description": "LP#### — filter to one student." },
+    "institution": { "type": "string", "description": "Partial match on institution name." },
+    "enrollment_status": { "type": "string", "description": "Single-letter code: F=Full-time, Q=Three-quarter, H=Half-time, etc." },
+    "graduated": { "type": "boolean", "description": "Filter to graduated or not." }
+  },
+  "required": []
+}
+```
+
+---
+
+### `search_documents`
+
+Raw document chunk search with optional entity filter. Searches `document_chunks` using pgvector cosine similarity.
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": { "type": "string", "description": "Natural language search query." },
+    "source": { "type": "string", "description": "Filter by source (e.g. 'notion', 'drive')." },
+    "top_k": { "type": "integer", "description": "Number of results. Default 8, max 20.", "default": 8 }
+  },
+  "required": ["query"]
 }
 ```
 

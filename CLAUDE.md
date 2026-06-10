@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-An internal AI intelligence layer for Launchpad that lets team members query Claude with live organizational data — student profiles, program outcomes, certifications, competency scores, finances, donations, and communications. Built on a fully AWS-native stack. The system ingests data through seven connectors (Google Drive, Google Sheets, BigQuery, GiveButter, Aplos, Slack, Roam), stores it in Postgres + pgvector, and exposes it to Claude through an MCP server. A Next.js HQ dashboard provides sync status and operational visibility.
+An internal AI intelligence layer for Launchpad that lets team members query Claude with live organizational data — student profiles, program outcomes, certifications, competency scores, finances, donations, and communications. Built on a fully AWS-native stack. The system ingests data through nine connectors (Google Sheets, Google Drive, BigQuery, GiveButter, Aplos, Slack, Roam, Notion, plus a sync task runner), stores it in Postgres + pgvector, and exposes it to Claude through an MCP server. A Next.js HQ dashboard provides sync status and operational visibility.
 
 ## Stack
 
@@ -31,11 +31,12 @@ An internal AI intelligence layer for Launchpad that lets team members query Cla
 
 | Connector | Source | Destination | Status |
 |---|---|---|---|
-| `google-sheets` | Launchpad Dashboard + Outcomes sheets | Postgres | Skeleton — awaiting `GOOGLE_SERVICE_ACCOUNT_JSON` |
-| `google-drive` | Drive docs folder | Postgres + pgvector | Skeleton — awaiting `GOOGLE_SERVICE_ACCOUNT_JSON` |
-| `bigquery` | `lp-internal-ai` BigQuery project | Postgres | Skeleton — awaiting Google service account |
-| `givebutter` | GiveButter donation platform | `donor_contacts`, `donor_gifts` | REST client implemented; awaiting `GIVEBUTTER_API_KEY` |
-| `aplos` | Aplos nonprofit accounting | Postgres | Skeleton — awaiting `APLOS_CLIENT_ID` + `APLOS_API_KEY` |
+| `google-sheets` | Launchpad Dashboard + Outcomes sheets (12 spreadsheets) | Postgres | ✅ Live — all 12 sheet syncs ported; 26K+ records ingested |
+| `google-drive` | Drive docs folder | Postgres + pgvector | Skeleton — creds available, implementation pending |
+| `bigquery` | `lp-internal-ai` BigQuery project | Postgres | Skeleton — creds available, implementation pending |
+| `givebutter` | GiveButter donation platform | `donor_contacts`, `donor_gifts`, `donor_pipeline` | ✅ Live — REST client syncing donors, gifts, pipeline |
+| `aplos` | Aplos nonprofit accounting | Postgres (finance snapshots) | ✅ Live — RSA-decryption auth; 16K+ records |
+| `notion` | Notion meeting transcripts database | `document_chunks` (pgvector) | ✅ Live — meeting transcript sync with embeddings |
 | `slack` | Designated Slack channels | pgvector | Skeleton — awaiting `SLACK_BOT_TOKEN` |
 | `roam` | Roam chat/messaging app | pgvector | Skeleton — awaiting `ROAM_API_KEY` |
 
@@ -72,10 +73,15 @@ pnpm --filter @lp-ai/mcp-server dev:http  # HTTP at :8080, hot-reload
 pnpm --filter @lp-ai/mcp-server start      # stdio (for Claude Desktop)
 pnpm --filter @lp-ai/mcp-server start:http # HTTP at :8080 (for ECS / local testing)
 
-# Connector syncs (noop until credentials are set)
-pnpm sync:givebutter
-pnpm sync:sheets && pnpm sync:drive && pnpm sync:bigquery
-pnpm sync:aplos && pnpm sync:slack && pnpm sync:roam
+# Connector syncs
+pnpm sync:sheets                # google-sheets (live)
+pnpm sync:givebutter            # givebutter (live)
+pnpm sync:aplos                 # aplos (live)
+pnpm sync:notion                # notion meeting transcripts (live)
+pnpm sync:drive                 # google-drive (skeleton)
+pnpm sync:bigquery              # bigquery (skeleton)
+pnpm sync:slack                 # slack (skeleton — awaiting SLACK_BOT_TOKEN)
+pnpm sync:roam                  # roam (skeleton — awaiting ROAM_API_KEY)
 pnpm sync:all                   # all connectors in parallel
 
 # Database tools
@@ -87,6 +93,8 @@ pnpm db:down                    # stop Docker Postgres
 # Production Docker images (run from repo root)
 docker build -f apps/hq/Dockerfile -t lp-hq:dev .
 docker build -f apps/mcp-server/Dockerfile -t lp-mcp:dev .
+docker build -f apps/aws-mcp-server/Dockerfile -t lp-aws-mcp:dev .
+docker build -f apps/sync/Dockerfile -t lp-sync:dev .
 ```
 
 ## Architecture
@@ -96,6 +104,8 @@ docker build -f apps/mcp-server/Dockerfile -t lp-mcp:dev .
 ```
 apps/hq              → @lp-ai/lib-db, @lp-ai/lib-config
 apps/mcp-server      → @lp-ai/lib-db, @lp-ai/lib-config, @lp-ai/lib-embedding
+apps/aws-mcp-server  → @lp-ai/lib-db, @lp-ai/lib-config
+apps/sync            → connectors/* (one-off Fargate task runner for scheduled syncs)
 connectors/*         → @lp-ai/lib-db, @lp-ai/lib-config
 packages/db          → Prisma client, entity resolution, sync-runs helper, seed
 packages/embedding   → OpenAI embedding batch/retry helpers
@@ -108,21 +118,23 @@ packages/config      → Zod env schema, AWS Secrets Manager loader
 - `prisma.config.ts` (repo root) — Prisma config pointing at the schema and migrations
 - `packages/db/src/entity-resolution.ts` — fuzzy name matching across all data sources; called by `get_student_info` and `search_by_person`
 - `packages/db/src/sync-runs.ts` — `runSync()` wrapper used by every connector
-- `apps/mcp-server/src/make-server.ts` — registers all 14 tools; edit here to add/remove tools
+- `apps/mcp-server/src/make-server.ts` — registers all 16 tools; edit here to add/remove tools
 - `apps/mcp-server/src/tool-helpers.ts` — `runTool()` wrapper (error capture + usage logging), `parseStr()`, `parseNum()`
 - `apps/mcp-server/src/errors.ts` — `toolError()` and `notImplemented()` for structured error envelopes
 - `apps/mcp-server/src/usage-log.ts` — writes every tool call to `usage_logs` table; surfaced in HQ `/tools`
 - `apps/hq/auth.ts` + `apps/hq/auth.config.ts` — NextAuth v5 config; domain restricted to `AUTH_ALLOWED_DOMAIN`
-- `apps/hq/middleware.ts` — gates all routes except `/auth/signin`, `/api/auth`, `/api/health`
+- `apps/hq/middleware.ts` — gates all routes except `/auth/signin`, `/api/auth`, `/api/health`, `/aws-jobs`, `/api/aws-jobs`; supports `HQ_DEV_NO_AUTH=true` bypass for local dev
 
 ### HQ dashboard routes
 
 | Route | Purpose |
 |---|---|
 | `/` | Data freshness overview |
+| `/dashboard` | Analytic dashboard (enrollment, attendance, finances, donors) |
 | `/sync` | Connector sync run history (`sync_runs` table) |
 | `/tools` | MCP tool call log (`usage_logs` table) |
-| `/aws-jobs` | AWS EventBridge job details |
+| `/admin` | MCP OAuth user/role management + tool permissions |
+| `/aws-jobs/[id]` | AWS resource job details (approval workflow) |
 | `/api/health` | Unauthenticated health check |
 | `/auth/signin` | Google OAuth sign-in (whitelisted from auth middleware) |
 
@@ -175,7 +187,7 @@ Before modifying any component, read the relevant spec:
 
 - [Architecture](docs/architecture.md) — system overview and data flow
 - [Database Schema](docs/database-schema.md) — all Postgres tables
-- [MCP Server Spec](docs/mcp-server-spec.md) — all 14 tool definitions with input/output schemas
+- [MCP Server Spec](docs/mcp-server-spec.md) — all 16 tool definitions with input/output schemas
 - [Entity Resolution](docs/entity-resolution.md) — how students/staff are resolved across sources
 - Per-connector specs in `docs/data-sources/`
 
