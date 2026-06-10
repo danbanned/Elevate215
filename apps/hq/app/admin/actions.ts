@@ -1,0 +1,78 @@
+'use server';
+
+import { prisma } from '@lp-ai/lib-db';
+import { revalidatePath } from 'next/cache';
+import { auth } from '../../auth';
+import { ROLES, type Role } from './roles';
+
+async function assertAdmin(): Promise<string> {
+  const session = await auth();
+  const email = session?.user?.email?.toLowerCase();
+  if (!email) throw new Error('not_authenticated');
+  const me = await prisma.mcpUser.findUnique({ where: { email } });
+  if (!me || me.status !== 'ACTIVE' || !me.roles.includes('admin')) {
+    throw new Error('not_authorized');
+  }
+  return email;
+}
+
+function parseEmail(formData: FormData): string {
+  const v = formData.get('email');
+  if (typeof v !== 'string' || !v) throw new Error('email_required');
+  return v.toLowerCase();
+}
+
+function parseRoles(formData: FormData): Role[] {
+  return formData
+    .getAll('roles')
+    .filter((v): v is string => typeof v === 'string')
+    .filter((v): v is Role => (ROLES as readonly string[]).includes(v));
+}
+
+export async function promoteUser(formData: FormData): Promise<void> {
+  await assertAdmin();
+  const email = parseEmail(formData);
+  const action = formData.get('action');
+
+  if (action === 'activate') {
+    await prisma.mcpUser.update({
+      where: { email },
+      data: { status: 'ACTIVE' },
+    });
+  } else if (action === 'set-roles') {
+    const roles = parseRoles(formData);
+    await prisma.mcpUser.update({
+      where: { email },
+      data: { roles },
+    });
+  }
+  revalidatePath('/admin');
+}
+
+export async function disableUser(formData: FormData): Promise<void> {
+  await assertAdmin();
+  const email = parseEmail(formData);
+  await prisma.mcpUser.update({
+    where: { email },
+    data: { status: 'DISABLED' },
+  });
+  // Revoke all outstanding refresh tokens for this user — they need to re-auth
+  // and will fail at that point because account is disabled.
+  await prisma.oAuthRefreshToken.updateMany({
+    where: { userEmail: email, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+  revalidatePath('/admin');
+}
+
+export async function addUser(formData: FormData): Promise<void> {
+  await assertAdmin();
+  const email = parseEmail(formData);
+  const roles = parseRoles(formData);
+  await prisma.mcpUser.upsert({
+    where: { email },
+    update: { status: 'ACTIVE', roles },
+    create: { email, status: 'ACTIVE', roles },
+  });
+  revalidatePath('/admin');
+}
