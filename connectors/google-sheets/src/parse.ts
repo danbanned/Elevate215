@@ -359,3 +359,96 @@ export function parseEmploymentRow(raw: string[]): EmploymentRow | null {
     notes:          str(get(11)),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Postsecondary row → typed record (V2 sheet, "PostSecondary" tab)
+// Columns: studentNumber, firstName, lastName, institution, institutionLength
+//   (2-year/4-year), institutionType (Public/Private), enrollmentBegin,
+//   enrollmentEnd, enrollmentStatus, classLevel, enrollmentMajor1,
+//   enrollmentMajor2, graduated (Y/N/Yes/No/true/false), graduationDate,
+//   degreeTitle, degreeMajor1, degreeMajor2, degreeMajor3.
+//
+// enrollmentStatus and classLevel are stored verbatim as single-letter codes.
+// Use POSTSECONDARY_ENROLLMENT_STATUS_LABELS / POSTSECONDARY_CLASS_LEVEL_LABELS
+// at the display layer to translate to human-readable values.
+// ---------------------------------------------------------------------------
+
+// National Student Clearinghouse enrollment status codes (verbatim).
+export const POSTSECONDARY_ENROLLMENT_STATUS_LABELS: Record<string, string> = {
+  F: 'Full-time',
+  Q: 'Three-quarter time',
+  H: 'Half-time',
+  L: 'Less than half-time',
+  A: 'Leave of absence',
+  W: 'Withdrawn',
+  D: 'Deceased',
+};
+
+// National Student Clearinghouse class level codes (verbatim).
+// Note: 'D' is overloaded — Deceased in enrollment_status, Doctoral here.
+// Always interpret in the context of the column it came from.
+export const POSTSECONDARY_CLASS_LEVEL_LABELS: Record<string, string> = {
+  F: 'Freshman (Undergraduate)',
+  S: 'Sophomore (Undergraduate)',
+  J: 'Junior (Undergraduate)',
+  R: 'Senior (Undergraduate)',
+  C: 'Certificate (Undergraduate)',
+  N: 'Unspecified (Undergraduate)',
+  B: "Bachelor's (Undergraduate)",
+  M: "Master's (Graduate)",
+  D: 'Doctoral (Graduate)',
+  P: 'Postdoctorate (Graduate)',
+  L: 'First Professional (Graduate)',
+  G: 'Unspecified (Graduate/Professional)',
+  A: "Associate's",
+  T: 'Post Baccalaureate Certificate',
+};
+
+
+export type PostsecondaryRow = {
+  studentNumber: string;
+  firstName: string | null;
+  lastName: string | null;
+  institution: string | null;
+  institutionLength: string | null;
+  institutionType: string | null;
+  enrollmentBegin: string | null;
+  enrollmentEnd: string | null;
+  enrollmentStatus: string | null;
+  classLevel: string | null;
+  enrollmentMajor1: string | null;
+  enrollmentMajor2: string | null;
+  graduated: boolean | null;
+  graduationDate: string | null;
+  degreeTitle: string | null;
+  degreeMajor1: string | null;
+  degreeMajor2: string | null;
+  degreeMajor3: string | null;
+};
+
+export function parsePostsecondaryRow(raw: string[]): PostsecondaryRow | null {
+  const get = (i: number) => raw[i]?.trim();
+  const studentNumber = get(0);
+  if (!studentNumber) return null;
+
+  return {
+    studentNumber,
+    firstName:        str(get(1)),
+    lastName:         str(get(2)),
+    institution:      str(get(3)),
+    institutionLength: str(get(4)),
+    institutionType:  str(get(5)),
+    enrollmentBegin:  parseDate(get(6)),
+    enrollmentEnd:    parseDate(get(7)),
+    enrollmentStatus: str(get(8)),
+    classLevel:       str(get(9)),
+    enrollmentMajor1: str(get(10)),
+    enrollmentMajor2: str(get(11)),
+    graduated:        parseBool(get(12)),
+    graduationDate:   parseDate(get(13)),
+    degreeTitle:      str(get(14)),
+    degreeMajor1:     str(get(15)),
+    degreeMajor2:     str(get(16)),
+    degreeMajor3:     str(get(17)),
+  };
+}
