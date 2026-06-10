@@ -12,17 +12,17 @@ datasource db {
 }
 
 model Student {
-  id                       String    @id @default(uuid())
-  studentNumber            String?   @unique @map("student_number")
-  canonicalName            String    @map("canonical_name")
-  email                    String?
-  phone                    String?
-  currentPhase             String?   @map("current_phase")
-  enrollmentStatus         String?   @map("enrollment_status")
-  cohort                   Int?
-  distanceToOffice         Float?    @map("distance_to_office")
-  neighborhood             String?
-  graduationDate           DateTime? @map("graduation_date")
+  id               String    @id @default(uuid())
+  studentNumber    String?   @unique @map("student_number")
+  canonicalName    String    @map("canonical_name")
+  email            String?
+  phone            String?
+  currentPhase     String?   @map("current_phase")
+  enrollmentStatus String?   @map("enrollment_status")
+  cohort           Int?
+  distanceToOffice Float?    @map("distance_to_office")
+  neighborhood     String?
+  graduationDate   DateTime? @map("graduation_date")
 
   gender                   String?
   raceEthnicity            String?   @map("race_ethnicity")
@@ -52,31 +52,31 @@ model Student {
   parentalEd               String?   @map("parental_ed")
 
   // V2 sheet additions
-  dob                      DateTime? @db.Date
-  suffix                   String?
-  altSchoolEmail           String?   @map("alt_school_email")
-  asuriteUserId            String?   @map("asurite_user_id")
-  rapidAccountNumber       String?   @map("rapid_account_number")
-  altContact               String?   @map("alt_contact")
-  idCardNumber             String?   @map("id_card_number")
-  docFolderUrl             String?   @map("doc_folder_url")
-  tShirtSize               String?   @map("t_shirt_size")
-  algebraKeystoneScore     Decimal?  @map("algebra_keystone_score") @db.Decimal(6, 2)
-  worksOutsideLaunchpad    Boolean?  @map("works_outside_launchpad")
-  hoursOutsideCommitted    Decimal?  @map("hours_outside_committed") @db.Decimal(5, 2)
-  permissionSlip           Boolean?  @map("permission_slip")
-  extraTime                Boolean?  @map("extra_time")
-  workReadyQ1              String?   @map("work_ready_q1")
-  ell                      Boolean?
+  dob                   DateTime? @db.Date
+  suffix                String?
+  altSchoolEmail        String?   @map("alt_school_email")
+  asuriteUserId         String?   @map("asurite_user_id")
+  rapidAccountNumber    String?   @map("rapid_account_number")
+  altContact            String?   @map("alt_contact")
+  idCardNumber          String?   @map("id_card_number")
+  docFolderUrl          String?   @map("doc_folder_url")
+  tShirtSize            String?   @map("t_shirt_size")
+  algebraKeystoneScore  Decimal?  @map("algebra_keystone_score") @db.Decimal(6, 2)
+  worksOutsideLaunchpad Boolean?  @map("works_outside_launchpad")
+  hoursOutsideCommitted Decimal?  @map("hours_outside_committed") @db.Decimal(5, 2)
+  permissionSlip        Boolean?  @map("permission_slip")
+  extraTime             Boolean?  @map("extra_time")
+  workReadyQ1           String?   @map("work_ready_q1")
+  ell                   Boolean?
 
-  createdAt                DateTime  @default(now()) @map("created_at")
-  updatedAt                DateTime  @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  aliases           EntityAlias[]
-  certifications    StudentCertification[]
-  phaseOutcomes     StudentPhaseOutcome[]
-  studentInfo       StudentInfo[]
-  employment        StudentEmployment[]
+  aliases        EntityAlias[]
+  certifications StudentCertification[]
+  phaseOutcomes  StudentPhaseOutcome[]
+  studentInfo    StudentInfo[]
+  employment     StudentEmployment[]
 
   @@index([canonicalName])
   @@index([cohort])
@@ -441,20 +441,81 @@ model VerificationToken {
 }
 
 model AwsResourceJob {
-  id           String    @id @default(uuid())
-  developer    String    @map("developer")
-  actionType   String    @map("action_type")     // CREATE, UPDATE, DELETE
-  resourceType String    @map("resource_type")   // e.g. AWS::S3::Bucket, terraform
-  parameters   Json      @map("parameters")      // Inputs / TF code / variables
-  planOutput   String?   @map("plan_output")     // Plan / Dry-run details
-  status       String    @map("status")          // PENDING_APPROVAL, APPROVED, REJECTED, IN_PROGRESS, SUCCEEDED, FAILED
-  error        String?   @map("error")
-  approver     String?   @map("approver")        // Approver email
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+  id           String   @id @default(uuid())
+  developer    String   @map("developer")
+  actionType   String   @map("action_type") // CREATE, UPDATE, DELETE
+  resourceType String   @map("resource_type") // e.g. AWS::S3::Bucket, terraform
+  parameters   Json     @map("parameters") // Inputs / TF code / variables
+  planOutput   String?  @map("plan_output") // Plan / Dry-run details
+  status       String   @map("status") // PENDING_APPROVAL, APPROVED, REJECTED, IN_PROGRESS, SUCCEEDED, FAILED
+  error        String?  @map("error")
+  approver     String?  @map("approver") // Approver email
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@index([developer])
   @@index([status])
   @@map("aws_resource_jobs")
 }
 
+// ---------- MCP OAuth 2.0 (Phase 23) ----------
+//
+// The `users` table is the source of truth for MCP access. Anyone who completes
+// the OAuth flow ends up with a row here; their `status` + `roles` decide what
+// they can do. NextAuth's `Account`/`Session`/`User` tables (above) are
+// independent — those gate HQ sign-in only.
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  DISABLED
+}
+
+model McpUser {
+  email     String     @id
+  status    UserStatus @default(PENDING)
+  roles     String[]   @default([])
+  createdAt DateTime   @default(now()) @map("created_at")
+  lastLogin DateTime?  @map("last_login")
+
+  @@index([status])
+  @@map("mcp_users")
+}
+
+model OAuthClient {
+  clientId       String   @id @map("client_id")
+  clientName     String   @map("client_name")
+  redirectUris   String[] @map("redirect_uris")
+  tokenLifetimeS Int      @default(3600) @map("token_lifetime_s")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@map("oauth_clients")
+}
+
+model OAuthAuthorizationCode {
+  code          String    @id
+  clientId      String    @map("client_id")
+  userEmail     String    @map("user_email")
+  redirectUri   String    @map("redirect_uri")
+  codeChallenge String    @map("code_challenge")
+  scopes        String[]  @default([])
+  expiresAt     DateTime  @map("expires_at")
+  usedAt        DateTime? @map("used_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@index([expiresAt])
+  @@map("oauth_authorization_codes")
+}
+
+model OAuthRefreshToken {
+  tokenId   String    @id @map("token_id")
+  clientId  String    @map("client_id")
+  userEmail String    @map("user_email")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userEmail])
+  @@index([expiresAt])
+  @@map("oauth_refresh_tokens")
+}
