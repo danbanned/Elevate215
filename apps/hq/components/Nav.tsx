@@ -1,8 +1,18 @@
 import Link from 'next/link';
 import { auth, signIn, signOut } from '@/auth';
+import { prisma } from '@lp-ai/lib-db';
 
 export async function Nav() {
   const session = await auth();
+
+  // Only show the Admin link to users whose mcp_users row carries the admin role.
+  let isAdmin = false;
+  if (session?.user?.email) {
+    const me = await prisma.mcpUser.findUnique({
+      where: { email: session.user.email.toLowerCase() },
+    });
+    isAdmin = me?.status === 'ACTIVE' && me.roles.includes('admin');
+  }
 
   return (
     <header className="border-b bg-white">
@@ -24,6 +34,11 @@ export async function Nav() {
             <Link href="/tools" className="hover:text-ink">
               Tool Log
             </Link>
+            {isAdmin && (
+              <Link href="/admin" className="hover:text-ink">
+                Admin
+              </Link>
+            )}
           </nav>
         </div>
         <div className="text-sm text-muted">

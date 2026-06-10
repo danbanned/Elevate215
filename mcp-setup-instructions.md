@@ -1,175 +1,159 @@
-### Updated Setup & Claude Configuration
+# Using the LP Internal AI MCP Server
 
-With AWS App Runner deprecated as of April 2026, both MCP servers are deployed using **Amazon ECS Express Mode** as containerized Fargate tasks behind an Application Load Balancer.
+There are two ways to connect to the MCP server, depending on whether you're an
+end-user or a developer.
 
-> **TLS requirement.** All `MCP_URL` / `AWS_MCP_URL` values below use `https://` because bearer tokens travel in the `Authorization` header on every request. The ALB must terminate TLS via an ACM certificate on a `:443` HTTPS listener; a plain `:80` HTTP listener will leak credentials and must be either removed or set to redirect 80→443. If you bring up a fresh ALB, see `docs/setup/09-app-runner.md` for the listener + ACM steps.
+---
 
-### 1. Updated `aws-mcp.json` Configuration
+## Path A — Anthropic Console (recommended for everyone)
+
+This is the supported path for the whole team. One click; no scripts; no shared
+tokens distributed to laptops.
+
+### One-time per device
+
+1. Open **Claude** (web at [claude.ai](https://claude.ai), desktop app, or
+   mobile) — signed into your Anthropic account that belongs to the Launchpad
+   org.
+2. Go to **Connectors** (or Settings → Integrations).
+3. Find **LP Internal AI** in the list and click **Connect**.
+4. A popup opens at `https://mcp.launchpadinc.org/oauth/authorize?...`. The
+   server redirects you to **Sign in with Google** using your
+   `@launchpadphilly.org` account.
+5. After Google returns, you may see a banner saying your account is **pending
+   approval**. If so, ask an LP Internal AI admin (Christian to start) to
+   activate you via the HQ admin page. Once activated, click Connect again
+   and the OAuth flow completes silently.
+
+### After that — just use Claude
+
+Ask Claude things like *"Give me a brief on student John Doe"* or *"What's the
+attendance trend for Cohort 3 this week?"* — Claude will pick the right tool
+from the LP Internal AI server, your stored credential is used automatically.
+
+### Refresh
+
+Refresh tokens last 30 days. You'll be asked to reconnect once a month or so.
+
+### Permissions
+
+Tools you can call depend on the role assigned to your account. The full role
+matrix lives in [`docs/setup/23-mcp-oauth.md`](docs/setup/23-mcp-oauth.md).
+Briefly:
+
+- `program_staff` — students / outcomes / attendance / certifications
+- `development` — donors / entity briefs
+- `sales` — donors / HubSpot (when wired)
+- `finance` — finances / donors (read)
+- `software_dev` — search / Notion / GitHub (when wired)
+- `leadership` — read access across all domains
+- `admin` — can manage user roles via HQ
+
+---
+
+## Path B — Developer / Power User: Claude Desktop Bridge
+
+This is the **fallback** path for developers who want stdio MCP access from the
+Claude Desktop app without going through the Anthropic Console. It uses a
+shared `SYNC_SECRET` bearer token; the Anthropic Console path is preferred
+because it's per-user-attributable in the audit log.
+
+### `claude_desktop_config.json`
+
+> Linux: `~/.config/Claude/config.json`
+> macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+> Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 
 ```json
 {
   "mcpServers": {
+    "lp-internal": {
+      "command": "node",
+      "args": [
+        "/path/to/lp-internal-ai-v1/apps/mcp-server/dist/bridge.js"
+      ],
+      "env": {
+        "MCP_URL": "https://mcp.launchpadinc.org/mcp",
+        "SYNC_SECRET": "<from 1Password>"
+      }
+    },
     "lp-internal-aws": {
       "command": "node",
       "args": [
-        "/home/s4developer/engineering-projects/lp-internal-ai-v1/apps/mcp-server/dist/bridge.js"
+        "/path/to/lp-internal-ai-v1/apps/aws-mcp-server/dist/bridge.js"
       ],
       "env": {
-        "MCP_URL": "https://ecs-express-gateway-alb-01c9106a-1205608538.us-east-1.elb.amazonaws.com/mcp",
-        "SYNC_SECRET": "lpInc123!"
+        "AWS_MCP_URL": "https://aws-mcp.launchpadinc.org/mcp",
+        "AWS_MCP_TOKEN": "<from 1Password>"
       }
-    },
-    "aws-resource-creator": {
-      "command": "node",
-      "args": [
-        "/home/s4developer/engineering-projects/lp-internal-ai-v1/apps/aws-mcp-server/dist/bridge.js"
-      ],
-      "env": {
-        "AWS_MCP_URL": "http://localhost:8081/mcp",
-        "AWS_MCP_TOKEN": "lpInc123!"
-      }
-    },
-    "aws-agent-toolkit": {
-      "command": "uvx",
-      "args": [
-        "mcp-proxy-for-aws@latest",
-        "https://aws-mcp.us-east-1.api.aws/mcp",
-        "--metadata",
-        "AWS_REGION=us-east-1"
-      ]
     }
   }
 }
 ```
 
----
-> Linux: ~/.config/Claude/config.json
-> macOS: ~/Library/Application Support/Claude/claude_desktop_config.json
+`SYNC_SECRET` lives in 1Password (production value) or in your local `.env`
+for development.
 
-### 2. Windows Claude Desktop Configuration
+### Build the bridges
 
->  Claude Desktop on Windows can use MCP servers via the following configuration:
-
-#### 1. Configuration File Location
-Open the following path in File Explorer or your text editor:
-* **Short Path**: `%APPDATA%\Claude\claude_desktop_config.json`
-* **Full Path**: `C:\Users\<YourUsername>\AppData\Roaming\Claude\claude_desktop_config.json`
-
-#### 2. JSON Configuration (Windows Syntax)
-In Windows JSON configuration files, you must escape backslashes using `\\` or use forward slashes `/`. Here is the Windows configuration:
-
-```json
-{
-  "mcpServers": {
-    "lp-internal-aws": {
-      "command": "node",
-      "args": [
-        "C:\\Users\\<YourUsername>\\engineering-projects\\lp-internal-ai-v1\\apps\\mcp-server\\dist\\bridge.js"
-      ],
-      "env": {
-        "MCP_URL": "https://ecs-express-gateway-alb-01c9106a-1205608538.us-east-1.elb.amazonaws.com/mcp",
-        "SYNC_SECRET": "lpInc123!"
-      }
-    },
-    "aws-resource-creator": {
-      "command": "node",
-      "args": [
-        "C:\\Users\\<YourUsername>\\engineering-projects\\lp-internal-ai-v1\\apps\\aws-mcp-server\\dist\\bridge.js"
-      ],
-      "env": {
-        "AWS_MCP_URL": "http://localhost:8081/mcp",
-        "AWS_MCP_TOKEN": "lpInc123!"
-      }
-    },
-    "aws-agent-toolkit": {
-      "command": "uvx",
-      "args": [
-        "mcp-proxy-for-aws@latest",
-        "https://aws-mcp.us-east-1.api.aws/mcp",
-        "--metadata",
-        "AWS_REGION=us-east-1"
-      ]
-    }
-  }
-}
+```bash
+pnpm install
+pnpm --filter @lp-ai/mcp-server build
+pnpm --filter @lp-ai/aws-mcp-server build
 ```
-*(Replace `<YourUsername>` and the workspace path to match the target machine's Windows path).*
 
 ---
 
-### 3. Next Steps (Running the Services)
+## Verification
 
-1. **Build all dependencies**:
-   ```bash
-   pnpm install
-   pnpm --filter @lp-ai/mcp-server build
-   pnpm --filter @lp-ai/aws-mcp-server build
-   ```
+### Service health (anyone, no auth)
 
-2. **Run Main Data Server**:
-   The `lp-internal-aws` server routes requests over HTTPS to the Application Load Balancer deployed via **ECS Express Mode**. As long as your ECS service is running on AWS, no local server execution is required.
-
-3. **Run AWS Resource Creator Server**:
-   * **Local Development**: Spin up the local HTTP listener on port `8081`:
-     ```bash
-     pnpm --filter @lp-ai/aws-mcp-server dev:http
-     ```
-   * **Production Deployment**: Once the infrastructure server is also deployed to Amazon ECS Express Mode, update the `AWS_MCP_URL` in the config file to point to the new ECS ALB DNS address instead of `localhost`.
-
-4. **Run Official Amazon AWS Agent Toolkit**:
-   * **Install `uv` (Prerequisite)**: The AWS MCP proxy server runs via Python and is launched with `uvx`. Ensure `uv` is installed on your machine:
-     ```bash
-     # Linux / macOS
-     curl -LsSf https://astral.sh/uv/install.sh | sh
-     ```
-   * **Configure AWS Credentials**: Ensure you have logged in or set up your local AWS credentials via the AWS CLI:
-     ```bash
-     aws sso login --profile dev
-     # or standard credentials setup
-     ```
-   * The proxy server will launch automatically when Claude starts, proxying standard input/output requests to Amazon's secure, remote AWS MCP API.
-
-## Verification & Troubleshooting Checklist
-
-### Verify Health Check Endpoint
-Query the service health endpoint from your local terminal (no authentication required):
 ```bash
-curl https://<your-alb-dns-name>.amazonaws.com/health
-```
-**Expected Response**:
-```json
-{
-  "status": "ok",
-  "ts": "2026-05-28T12:00:00.000Z"
-}
-```
-*If this returns a 503 or 504 error, check your security group settings to ensure the ALB can reach your Fargate task on port 8080, and that the Fargate task has outbound access to resolve and query the RDS Postgres instance.*
+curl https://mcp.launchpadinc.org/health
+# → {"status":"ok","ts":"..."}
 
-### Verify Authentication
-Verify that `/mcp` endpoints reject unauthenticated calls:
-```bash
-curl -X POST https://<your-alb-dns-name>.amazonaws.com/mcp
-```
-**Expected Response**:
-```json
-{
-  "error": "unauthorized"
-}
+curl https://aws-mcp.launchpadinc.org/health
+# → {"status":"ok","ts":"..."}
 ```
 
-Verify that tool queries work when using the `SYNC_SECRET` token:
+### OAuth discovery (anyone, no auth)
+
 ```bash
-curl -X POST https://<your-alb-dns-name>.amazonaws.com/mcp \
-  -H "Authorization: Bearer <your-sync-secret>" \
+curl https://mcp.launchpadinc.org/.well-known/oauth-protected-resource
+curl https://mcp.launchpadinc.org/.well-known/oauth-authorization-server
+curl https://mcp.launchpadinc.org/.well-known/jwks.json
+```
+
+### Authenticated `/mcp` (needs a token)
+
+```bash
+# Without token → 401
+curl -X POST https://mcp.launchpadinc.org/mcp
+
+# With your SYNC_SECRET (power-user path) → enters JSON-RPC protocol
+curl -X POST https://mcp.launchpadinc.org/mcp \
+  -H "Authorization: Bearer $SYNC_SECRET" \
   -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
-**Expected Response**: A JSON-RPC body returning the full schema for all 15 MCP tools.
 
-### Viewing Fargate Container Logs
-Review application logs in **Amazon CloudWatch Logs**:
-- Log Group: `/ecs/lp-internal-mcp-service`
-- Log Stream: `ecs/...`
-Look for Prisma connection errors or Secrets Manager decryption issues if the health check fails.
+---
 
+## Troubleshooting
 
+- **Anthropic Console says "couldn't connect" or "invalid_client"** — verify the
+  MCP server's OAuth client (`AUTH_GOOGLE_ID`) has
+  `https://mcp.launchpadinc.org/oauth/google-callback` in its Authorized
+  Redirect URIs.
+- **Sign-in says "pending approval"** — your account exists but isn't ACTIVE
+  yet. Ping the LP Internal AI admin (Christian) via Slack to activate it from
+  the HQ `/admin` page.
+- **"My role doesn't let me call X"** — admin needs to add the right role to
+  your account in HQ `/admin`.
+- **Claude Desktop bridge can't connect** — check your `MCP_URL` is `https://`
+  and that `SYNC_SECRET` matches what's in production Secrets Manager
+  (`lp-internal/sync`).
+
+For the protocol-level details (auth flow, JWT contents, role registry, schema
+changes), see [`docs/setup/23-mcp-oauth.md`](docs/setup/23-mcp-oauth.md).
