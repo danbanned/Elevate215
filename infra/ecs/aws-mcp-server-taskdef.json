@@ -23,7 +23,10 @@
         { "name": "USE_AWS_SECRETS",    "value": "true" },
         { "name": "AWS_REGION",         "value": "us-east-1" },
         { "name": "AWS_SECRETS_PREFIX", "value": "lp-internal" },
-        { "name": "AWS_MCP_PORT",       "value": "8081" }
+        { "name": "AWS_MCP_PORT",       "value": "8081" },
+        { "name": "MCP_OAUTH_ISSUER",   "value": "https://mcp.launchpadinc.org" },
+        { "name": "MCP_PUBLIC_URL",     "value": "https://mcp.launchpadinc.org" },
+        { "name": "AWS_MCP_PUBLIC_URL", "value": "https://aws-mcp.launchpadinc.org" }
       ],
       "secrets": [
         { "name": "DATABASE_URL",  "valueFrom": "arn:aws:secretsmanager:us-east-1:${AWS_ACCOUNT_ID}:secret:lp-internal/db:DATABASE_URL::" },

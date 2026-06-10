@@ -6,6 +6,7 @@ export interface UsageLogInput {
   output: unknown;
   durationMs: number;
   error?: string | undefined;
+  callerEmail?: string | undefined;
 }
 
 export async function logUsage(entry: UsageLogInput): Promise<void> {
@@ -17,6 +18,7 @@ export async function logUsage(entry: UsageLogInput): Promise<void> {
         outputJson: entry.output as object,
         durationMs: entry.durationMs,
         error: entry.error ?? null,
+        anthropicUserEmail: entry.callerEmail ?? null,
       },
     });
   } catch (err) {

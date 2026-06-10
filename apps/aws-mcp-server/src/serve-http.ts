@@ -7,13 +7,13 @@ import { loadEnv } from '@lp-ai/lib-config';
 import { prisma } from '@lp-ai/lib-db';
 
 import { makeServer } from './make-server.js';
+import { authenticateBearer } from './auth.js';
 
 const env = await loadEnv();
 if (env.SENTRY_DSN_MCP) {
   Sentry.init({ dsn: env.SENTRY_DSN_MCP, environment: process.env['NODE_ENV'], tracesSampleRate: 0.1 });
 }
 const PORT = Number(process.env['AWS_MCP_PORT'] ?? process.env['PORT'] ?? '8081');
-const SYNC_SECRET = env.SYNC_SECRET ?? 'default-secret-token';
 
 const mcpServer = makeServer();
 const transport = new StreamableHTTPServerTransport({
@@ -21,6 +21,17 @@ const transport = new StreamableHTTPServerTransport({
 });
 
 await mcpServer.connect(transport as unknown as Transport);
+
+async function protectedResourceMetadata(): Promise<object> {
+  const e = await loadEnv();
+  const issuer = e.MCP_OAUTH_ISSUER ?? 'https://mcp.launchpadinc.org';
+  const resource = e.AWS_MCP_PUBLIC_URL ?? 'https://aws-mcp.launchpadinc.org';
+  return {
+    resource,
+    authorization_servers: [issuer],
+    bearer_methods_supported: ['header'],
+  };
+}
 
 async function readBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -38,19 +49,14 @@ function send(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
-function authorized(req: IncomingMessage): boolean {
-  const header = req.headers['authorization'];
-  if (typeof header !== 'string') return false;
-  if (!header.startsWith('Bearer ')) return false;
-  return header.slice('Bearer '.length) === SYNC_SECRET;
-}
-
 const httpServer = createServer((req, res) => {
   void (async () => {
     try {
-      const url = req.url ?? '/';
+      const rawUrl = req.url ?? '/';
+      const url = new URL(rawUrl, `http://${req.headers.host ?? 'localhost'}`);
+      const path = url.pathname;
 
-      if (url === '/health' || url === '/') {
+      if (path === '/health' || path === '/') {
         try {
           await prisma.$queryRaw`SELECT 1`;
           send(res, 200, { status: 'ok', ts: new Date().toISOString() });
@@ -63,8 +69,14 @@ const httpServer = createServer((req, res) => {
         return;
       }
 
-      if (url.startsWith('/mcp')) {
-        if (!authorized(req)) {
+      if (path === '/.well-known/oauth-protected-resource') {
+        send(res, 200, await protectedResourceMetadata());
+        return;
+      }
+
+      if (path === '/mcp') {
+        const identity = await authenticateBearer(req.headers['authorization'] as string | undefined);
+        if (!identity) {
           send(res, 401, { error: 'unauthorized' });
           return;
         }

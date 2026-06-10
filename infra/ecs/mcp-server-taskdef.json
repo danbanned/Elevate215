@@ -23,7 +23,9 @@
         { "name": "USE_AWS_SECRETS",    "value": "true" },
         { "name": "AWS_REGION",         "value": "us-east-1" },
         { "name": "AWS_SECRETS_PREFIX", "value": "lp-internal" },
-        { "name": "PORT",               "value": "8080" }
+        { "name": "PORT",               "value": "8080" },
+        { "name": "MCP_OAUTH_ISSUER",   "value": "https://mcp.launchpadinc.org" },
+        { "name": "MCP_PUBLIC_URL",     "value": "https://mcp.launchpadinc.org" }
       ],
       "secrets": [
         { "name": "DATABASE_URL",                "valueFrom": "arn:aws:secretsmanager:us-east-1:${AWS_ACCOUNT_ID}:secret:lp-internal/db:DATABASE_URL::" },
@@ -39,7 +41,11 @@
         { "name": "ROAM_API_KEY",                "valueFrom": "arn:aws:secretsmanager:us-east-1:${AWS_ACCOUNT_ID}:secret:lp-internal/roam:ROAM_API_KEY::" },
         { "name": "ROAM_GRAPH_NAME",             "valueFrom": "arn:aws:secretsmanager:us-east-1:${AWS_ACCOUNT_ID}:secret:lp-internal/roam:ROAM_GRAPH_NAME::" },
         { "name": "NOTION_API_KEY",              "valueFrom": "arn:aws:secretsmanager:us-east-1:${AWS_ACCOUNT_ID}:secret:lp-internal/notion:NOTION_API_KEY::" },
-        { "name": "SENTRY_DSN_MCP",              "valueFrom": "arn:aws:secretsmanager:us-east-1:${AWS_ACCOUNT_ID}:secret:lp-internal/sentry:SENTRY_DSN_MCP::" }
+        { "name": "SENTRY_DSN_MCP",              "valueFrom": "arn:aws:secretsmanager:us-east-1:${AWS_ACCOUNT_ID}:secret:lp-internal/sentry:SENTRY_DSN_MCP::" },
+        { "name": "JWT_PRIVATE_KEY",             "valueFrom": "arn:aws:secretsmanager:us-east-1:${AWS_ACCOUNT_ID}:secret:lp-internal/jwt-signing:JWT_PRIVATE_KEY::" },
+        { "name": "JWT_KID",                     "valueFrom": "arn:aws:secretsmanager:us-east-1:${AWS_ACCOUNT_ID}:secret:lp-internal/jwt-signing:JWT_KID::" },
+        { "name": "AUTH_GOOGLE_ID",              "valueFrom": "arn:aws:secretsmanager:us-east-1:${AWS_ACCOUNT_ID}:secret:lp-internal/nextauth:AUTH_GOOGLE_ID::" },
+        { "name": "AUTH_GOOGLE_SECRET",          "valueFrom": "arn:aws:secretsmanager:us-east-1:${AWS_ACCOUNT_ID}:secret:lp-internal/nextauth:AUTH_GOOGLE_SECRET::" }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
