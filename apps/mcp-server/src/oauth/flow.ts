@@ -208,19 +208,20 @@ async function tokenAuthorizationCode(body: URLSearchParams): Promise<{
   const codeVerifier = body.get('code_verifier') ?? '';
   const redirectUri = body.get('redirect_uri') ?? '';
 
+  const fail = (msg: string) => {
+    process.stdout.write(
+      JSON.stringify({ lvl: 'warn', kind: 'token_auth_code', reason: msg, client_id: clientId, code_present: !!code, redirect_uri: redirectUri }) + '\n',
+    );
+    return { status: 400, json: { error: 'invalid_grant', error_description: msg } };
+  };
+
   const row = await prisma.oAuthAuthorizationCode.findUnique({ where: { code } });
-  if (!row) return { status: 400, json: { error: 'invalid_grant', error_description: 'unknown code' } };
-  if (row.usedAt) return { status: 400, json: { error: 'invalid_grant', error_description: 'code already used' } };
-  if (row.expiresAt.getTime() < Date.now()) {
-    return { status: 400, json: { error: 'invalid_grant', error_description: 'code expired' } };
-  }
-  if (row.clientId !== clientId) return { status: 400, json: { error: 'invalid_grant' } };
-  if (row.redirectUri !== redirectUri) {
-    return { status: 400, json: { error: 'invalid_grant', error_description: 'redirect_uri mismatch' } };
-  }
-  if (!verifyPkce(codeVerifier, row.codeChallenge)) {
-    return { status: 400, json: { error: 'invalid_grant', error_description: 'PKCE check failed' } };
-  }
+  if (!row) return fail('unknown code');
+  if (row.usedAt) return fail('code already used');
+  if (row.expiresAt.getTime() < Date.now()) return fail('code expired');
+  if (row.clientId !== clientId) return fail(`client_id mismatch: expected ${row.clientId}, got ${clientId}`);
+  if (row.redirectUri !== redirectUri) return fail(`redirect_uri mismatch: expected ${row.redirectUri}, got ${redirectUri}`);
+  if (!verifyPkce(codeVerifier, row.codeChallenge)) return fail('PKCE check failed');
 
   // Mark code as used (single-use). Issue tokens.
   await prisma.oAuthAuthorizationCode.update({

@@ -3,6 +3,12 @@
 There are two ways to connect to the MCP server, depending on whether you're an
 end-user or a developer.
 
+> **MCP endpoint URL** to give Anthropic Console / Claude Desktop / any MCP
+> client: **`https://mcp.launchpadinc.org/mcp`** (the `/mcp` suffix is required —
+> it's the JSON-RPC endpoint per the MCP Streamable HTTP spec). OAuth discovery
+> is resolved automatically from the base host. For the AWS governance server
+> the equivalent URL is `https://aws-mcp.launchpadinc.org/mcp`.
+
 ---
 
 ## Path A — Anthropic Console (recommended for everyone)

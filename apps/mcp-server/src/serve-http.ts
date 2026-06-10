@@ -61,12 +61,36 @@ function sendRedirect(res: ServerResponse, location: string): void {
   res.end();
 }
 
+function logOauth(req: IncomingMessage, status: number, extra: Record<string, unknown> = {}): void {
+  const url = req.url ?? '';
+  if (!url.startsWith('/oauth/') && !url.startsWith('/.well-known/')) return;
+  process.stdout.write(
+    JSON.stringify({
+      lvl: 'info',
+      kind: 'oauth',
+      method: req.method,
+      url,
+      status,
+      ua: req.headers['user-agent'],
+      ...extra,
+    }) + '\n',
+  );
+}
+
 const httpServer = createServer((req, res) => {
   void (async () => {
     try {
       const rawUrl = req.url ?? '/';
       const url = new URL(rawUrl, `http://${req.headers.host ?? 'localhost'}`);
       const path = url.pathname;
+      // Capture the response status so we can log it after the handler runs.
+      const origWriteHead = res.writeHead.bind(res);
+      let responseStatus = 0;
+      res.writeHead = ((status: number, ...rest: unknown[]) => {
+        responseStatus = status;
+        return (origWriteHead as unknown as (...args: unknown[]) => unknown)(status, ...rest);
+      }) as typeof res.writeHead;
+      res.on('finish', () => logOauth(req, responseStatus));
 
       // ----- health -----
       if (path === '/health' || path === '/') {

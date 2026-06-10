@@ -26,6 +26,9 @@ export interface DcrResponse {
 }
 
 export async function registerClient(req: DcrRequest): Promise<DcrResponse> {
+  process.stdout.write(
+    JSON.stringify({ lvl: 'info', kind: 'dcr', client_name: req.client_name, redirect_uris: req.redirect_uris }) + '\n',
+  );
   if (!Array.isArray(req.redirect_uris) || req.redirect_uris.length === 0) {
     throw new Error('invalid_redirect_uri');
   }
