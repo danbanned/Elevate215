@@ -25,7 +25,7 @@ const inputSchema = {
 const MIN_SIMILARITY = 0.7;
 
 export function registerSearchByPerson(server: McpServer): void {
-  server.registerTool(NAME, { description: DESCRIPTION, inputSchema }, (input) =>
+  server.registerTool(NAME, { description: DESCRIPTION, inputSchema, annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false } }, (input) =>
     runTool(NAME, input, async () => {
       const raw = input as Record<string, unknown>;
       const personName = parseStr(raw, 'person_name') ?? '';
