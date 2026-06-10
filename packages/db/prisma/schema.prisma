@@ -77,6 +77,7 @@ model Student {
   phaseOutcomes  StudentPhaseOutcome[]
   studentInfo    StudentInfo[]
   employment     StudentEmployment[]
+  postsecondary  StudentPostsecondary[]
 
   @@index([canonicalName])
   @@index([cohort])
@@ -205,6 +206,41 @@ model StudentEmployment {
   @@index([employerName])
   @@index([exitCode])
   @@map("student_employment")
+}
+
+model StudentPostsecondary {
+  id                String    @id @default(uuid())
+  sourceId          String    @unique @map("source_id")
+  studentNumber     String    @map("student_number")
+  firstName         String?   @map("first_name")
+  lastName          String?   @map("last_name")
+  institution       String?
+  institutionLength String?   @map("institution_length")
+  institutionType   String?   @map("institution_type")
+  enrollmentBegin   DateTime? @map("enrollment_begin") @db.Date
+  enrollmentEnd     DateTime? @map("enrollment_end") @db.Date
+  // National Student Clearinghouse single-letter codes:
+  // F=Full-time, Q=Three-quarter, H=Half-time, L=Less than half, A=Leave of absence, W=Withdrawn, D=Deceased
+  enrollmentStatus  String?   @map("enrollment_status")
+  // F=Freshman, S=Sophomore, J=Junior, R=Senior, C=Cert (UG), N=Unspec (UG), B=Bachelor's,
+  // M=Master's, D=Doctoral, P=Postdoc, L=First Prof, G=Unspec (Grad), A=Associate's, T=Post Bacc Cert
+  classLevel        String?   @map("class_level")
+  enrollmentMajor1  String?   @map("enrollment_major_1")
+  enrollmentMajor2  String?   @map("enrollment_major_2")
+  graduated         Boolean?
+  graduationDate    DateTime? @map("graduation_date") @db.Date
+  degreeTitle       String?   @map("degree_title")
+  degreeMajor1      String?   @map("degree_major_1")
+  degreeMajor2      String?   @map("degree_major_2")
+  degreeMajor3      String?   @map("degree_major_3")
+  lastSyncedAt      DateTime  @default(now()) @map("last_synced_at")
+
+  student Student? @relation(fields: [studentNumber], references: [studentNumber])
+
+  @@index([studentNumber])
+  @@index([institution])
+  @@index([enrollmentStatus])
+  @@map("student_postsecondary")
 }
 
 model StudentCompetency {
