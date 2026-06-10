@@ -47,6 +47,9 @@ importers:
       '@sentry/node':
         specifier: ^10.57.0
         version: 10.57.0
+      jose:
+        specifier: ^6.2.3
+        version: 6.2.3
       zod:
         specifier: ^3.23.8
         version: 3.25.76
@@ -127,6 +130,9 @@ importers:
       '@sentry/node':
         specifier: ^10.57.0
         version: 10.57.0
+      jose:
+        specifier: ^6.2.3
+        version: 6.2.3
       zod:
         specifier: ^3.23.0
         version: 3.25.76

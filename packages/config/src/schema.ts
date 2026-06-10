@@ -67,6 +67,13 @@ export const envSchema = z.object({
   SENTRY_PROJECT_MCP: optional,
 
   SYNC_SECRET: optional,
+
+  // MCP OAuth (Phase 23). Active on the MCP servers in production; ignored locally.
+  MCP_OAUTH_ISSUER: optional, // e.g. https://mcp.launchpadinc.org
+  MCP_PUBLIC_URL: optional, // resource URL advertised in /.well-known/oauth-protected-resource
+  AWS_MCP_PUBLIC_URL: optional, // resource URL for the AWS MCP server
+  JWT_PRIVATE_KEY: optional, // RSA PEM, signs MCP access tokens
+  JWT_KID: optional, // key ID exposed in JWKS
 });
 
 export type Env = z.infer<typeof envSchema>;
