@@ -35,12 +35,20 @@ function createTransport(): StreamableHTTPServerTransport {
   return transport;
 }
 
-function transportForRequest(req: IncomingMessage): StreamableHTTPServerTransport {
+type TransportLookup =
+  | { kind: 'found'; transport: StreamableHTTPServerTransport }
+  | { kind: 'new'; transport: StreamableHTTPServerTransport }
+  | { kind: 'session_gone' };
+
+function transportForRequest(req: IncomingMessage): TransportLookup {
   const sid = req.headers['mcp-session-id'];
-  if (typeof sid === 'string' && sessions.has(sid)) {
-    return sessions.get(sid)!;
+  if (typeof sid === 'string' && sid.length > 0) {
+    const existing = sessions.get(sid);
+    if (existing) return { kind: 'found', transport: existing };
+    // Unknown session — return 404 so the client knows to reinitialize.
+    return { kind: 'session_gone' };
   }
-  return createTransport();
+  return { kind: 'new', transport: createTransport() };
 }
 
 async function protectedResourceMetadata(): Promise<object> {
@@ -101,9 +109,27 @@ const httpServer = createServer((req, res) => {
           send(res, 401, { error: 'unauthorized' });
           return;
         }
+        const lookup = transportForRequest(req);
+        if (lookup.kind === 'session_gone') {
+          process.stdout.write(
+            JSON.stringify({
+              lvl: 'info',
+              kind: 'session_gone',
+              sid: req.headers['mcp-session-id'],
+            }) + '\n',
+          );
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              error: { code: -32001, message: 'Session not found — reinitialize' },
+              id: null,
+            }),
+          );
+          return;
+        }
         const body = await readBody(req);
-        const t = transportForRequest(req);
-        await t.handleRequest(req, res, body);
+        await lookup.transport.handleRequest(req, res, body);
         return;
       }
 

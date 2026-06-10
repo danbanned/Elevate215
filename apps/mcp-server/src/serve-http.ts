@@ -44,17 +44,24 @@ function createTransport(): StreamableHTTPServerTransport {
   return transport;
 }
 
-async function transportForRequest(req: IncomingMessage): Promise<StreamableHTTPServerTransport> {
+type TransportLookup =
+  | { kind: 'found'; transport: StreamableHTTPServerTransport }
+  | { kind: 'new'; transport: StreamableHTTPServerTransport }
+  | { kind: 'session_gone' };
+
+function transportForRequest(req: IncomingMessage): TransportLookup {
   const sid = req.headers['mcp-session-id'];
-  if (typeof sid === 'string' && sessions.has(sid)) {
-    return sessions.get(sid)!;
+  if (typeof sid === 'string' && sid.length > 0) {
+    const existing = sessions.get(sid);
+    if (existing) return { kind: 'found', transport: existing };
+    // Client sent a session ID we don't know about — probably from a task
+    // that was replaced during a deploy. Per MCP Streamable HTTP spec, we
+    // return HTTP 404 so the client knows to send a fresh InitializeRequest
+    // (without a session ID) instead of treating this as a fatal disconnect.
+    return { kind: 'session_gone' };
   }
-  // No session yet — this is either the initial POST or a request from
-  // a client that lost its session ID. Hand out a fresh transport; if the
-  // request happens to be `initialize`, the onsessioninitialized callback
-  // will register it. Other requests will just fail at the protocol layer,
-  // which is the correct behavior per the MCP spec.
-  return createTransport();
+  // No session ID — initialize or stateless request. Mint a new transport.
+  return { kind: 'new', transport: createTransport() };
 }
 
 async function readBody(req: IncomingMessage): Promise<unknown> {
@@ -207,11 +214,32 @@ const httpServer = createServer((req, res) => {
           sendJson(res, 401, { error: 'unauthorized' });
           return;
         }
+        const lookup = transportForRequest(req);
+        if (lookup.kind === 'session_gone') {
+          // Tell the client the session is gone — per MCP Streamable HTTP
+          // spec the client must then send a fresh InitializeRequest
+          // (without a session ID) to re-establish.
+          process.stdout.write(
+            JSON.stringify({
+              lvl: 'info',
+              kind: 'session_gone',
+              sid: req.headers['mcp-session-id'],
+            }) + '\n',
+          );
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              error: { code: -32001, message: 'Session not found — reinitialize' },
+              id: null,
+            }),
+          );
+          return;
+        }
         setCurrentCaller(identity);
         try {
           const body = await readBody(req);
-          const t = await transportForRequest(req);
-          await t.handleRequest(req, res, body);
+          await lookup.transport.handleRequest(req, res, body);
         } finally {
           setCurrentCaller(null);
         }
