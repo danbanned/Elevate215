@@ -15,12 +15,33 @@ if (env.SENTRY_DSN_MCP) {
 }
 const PORT = Number(process.env['AWS_MCP_PORT'] ?? process.env['PORT'] ?? '8081');
 
-const mcpServer = makeServer();
-const transport = new StreamableHTTPServerTransport({
-  sessionIdGenerator: () => randomUUID(),
-});
+// One transport per client session — see the equivalent note in
+// apps/mcp-server/src/serve-http.ts. A shared transport trips the
+// MCP SDK's "Server already initialized" guard on the second client.
+const sessions = new Map<string, StreamableHTTPServerTransport>();
 
-await mcpServer.connect(transport as unknown as Transport);
+function createTransport(): StreamableHTTPServerTransport {
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: () => randomUUID(),
+    onsessioninitialized: (sessionId: string) => {
+      sessions.set(sessionId, transport);
+    },
+    onsessionclosed: (sessionId: string) => {
+      sessions.delete(sessionId);
+    },
+  });
+  const server = makeServer();
+  void server.connect(transport as unknown as Transport);
+  return transport;
+}
+
+function transportForRequest(req: IncomingMessage): StreamableHTTPServerTransport {
+  const sid = req.headers['mcp-session-id'];
+  if (typeof sid === 'string' && sessions.has(sid)) {
+    return sessions.get(sid)!;
+  }
+  return createTransport();
+}
 
 async function protectedResourceMetadata(): Promise<object> {
   const e = await loadEnv();
@@ -81,7 +102,8 @@ const httpServer = createServer((req, res) => {
           return;
         }
         const body = await readBody(req);
-        await transport.handleRequest(req, res, body);
+        const t = transportForRequest(req);
+        await t.handleRequest(req, res, body);
         return;
       }
 
@@ -108,7 +130,9 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.on(signal, () => {
     process.stdout.write(`\nReceived ${signal}, shutting down...\n`);
     httpServer.close(() => {
-      void mcpServer.close().then(() => process.exit(0));
+      Promise.all(Array.from(sessions.values()).map((t) => t.close().catch(() => undefined)))
+        .then(() => process.exit(0))
+        .catch(() => process.exit(0));
     });
   });
 }
