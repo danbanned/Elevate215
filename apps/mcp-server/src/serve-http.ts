@@ -20,12 +20,42 @@ if (env.SENTRY_DSN_MCP) {
 }
 const PORT = Number(process.env['PORT'] ?? '8080');
 
-const mcpServer = makeServer();
-const transport = new StreamableHTTPServerTransport({
-  sessionIdGenerator: () => randomUUID(),
-});
+// One McpServer + StreamableHTTPServerTransport per *client session* — sharing
+// a single transport across clients trips the "Server already initialized"
+// guard the moment the second client tries to handshake. Sessions are keyed
+// by the Mcp-Session-Id header the SDK negotiates during initialize.
+//
+// We also keep an "uninitialized" transport on standby so we can hand it to
+// the first request from a client that hasn't picked up a session ID yet.
+const sessions = new Map<string, StreamableHTTPServerTransport>();
 
-await mcpServer.connect(transport as unknown as Transport);
+function createTransport(): StreamableHTTPServerTransport {
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: () => randomUUID(),
+    onsessioninitialized: (sessionId: string) => {
+      sessions.set(sessionId, transport);
+    },
+    onsessionclosed: (sessionId: string) => {
+      sessions.delete(sessionId);
+    },
+  });
+  const server = makeServer();
+  void server.connect(transport as unknown as Transport);
+  return transport;
+}
+
+async function transportForRequest(req: IncomingMessage): Promise<StreamableHTTPServerTransport> {
+  const sid = req.headers['mcp-session-id'];
+  if (typeof sid === 'string' && sessions.has(sid)) {
+    return sessions.get(sid)!;
+  }
+  // No session yet — this is either the initial POST or a request from
+  // a client that lost its session ID. Hand out a fresh transport; if the
+  // request happens to be `initialize`, the onsessioninitialized callback
+  // will register it. Other requests will just fail at the protocol layer,
+  // which is the correct behavior per the MCP spec.
+  return createTransport();
+}
 
 async function readBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -180,7 +210,8 @@ const httpServer = createServer((req, res) => {
         setCurrentCaller(identity);
         try {
           const body = await readBody(req);
-          await transport.handleRequest(req, res, body);
+          const t = await transportForRequest(req);
+          await t.handleRequest(req, res, body);
         } finally {
           setCurrentCaller(null);
         }
@@ -210,7 +241,9 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.on(signal, () => {
     process.stdout.write(`\nReceived ${signal}, shutting down...\n`);
     httpServer.close(() => {
-      void mcpServer.close().then(() => process.exit(0));
+      Promise.all(Array.from(sessions.values()).map((t) => t.close().catch(() => undefined)))
+        .then(() => process.exit(0))
+        .catch(() => process.exit(0));
     });
   });
 }
