@@ -58,7 +58,7 @@ export const envSchema = z.object({
   AUTH_SECRET: optional,
   AUTH_GOOGLE_ID: optional,
   AUTH_GOOGLE_SECRET: optional,
-  AUTH_ALLOWED_DOMAIN: z.string().trim().min(1).default('launchpadphilly.org'),
+  AUTH_ALLOWED_DOMAIN: z.string().trim().min(1).default('launchpadphilly.org,b-21.org'),
 
   SENTRY_DSN_HQ: optional,
   SENTRY_DSN_MCP: optional,

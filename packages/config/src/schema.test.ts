@@ -13,7 +13,7 @@ describe('envSchema', () => {
     expect(result.USE_AWS_SECRETS).toBe(false);
     expect(result.AWS_REGION).toBe('us-east-1');
     expect(result.AWS_SECRETS_PREFIX).toBe('lp-internal');
-    expect(result.AUTH_ALLOWED_DOMAIN).toBe('launchpadphilly.org');
+    expect(result.AUTH_ALLOWED_DOMAIN).toBe('launchpadphilly.org,b-21.org');
     expect(result.ANTHROPIC_API_KEY).toBeUndefined();
     expect(result.OPENAI_API_KEY).toBeUndefined();
   });
