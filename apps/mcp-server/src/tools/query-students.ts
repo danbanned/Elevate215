@@ -67,7 +67,13 @@ export function registerQueryStudents(server: McpServer): void {
             error: `field must be one of ${Array.from(NUMERIC_FIELDS).join(', ')}`,
           };
         }
-        const column = FIELD_TO_COLUMN[field] ?? field;
+        const column = FIELD_TO_COLUMN[field];
+        if (!column) {
+          return {
+            query_type: 'numeric_stats',
+            error: `No column mapping for field '${field}'.`,
+          };
+        }
         const rows = await prisma.$queryRawUnsafe<
           Array<{
             n: number | bigint;
