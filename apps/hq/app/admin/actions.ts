@@ -65,6 +65,22 @@ export async function disableUser(formData: FormData): Promise<void> {
   revalidatePath('/admin');
 }
 
+export async function deleteUser(formData: FormData): Promise<void> {
+  const adminEmail = await assertAdmin();
+  const email = parseEmail(formData);
+  if (email === adminEmail) throw new Error('cannot_delete_self');
+
+  // No FK constraints exist between mcp_users and the OAuth tables, but
+  // dangling refresh tokens / auth codes are useless once the user is gone.
+  // Clean them up in the same transaction.
+  await prisma.$transaction([
+    prisma.oAuthRefreshToken.deleteMany({ where: { userEmail: email } }),
+    prisma.oAuthAuthorizationCode.deleteMany({ where: { userEmail: email } }),
+    prisma.mcpUser.delete({ where: { email } }),
+  ]);
+  revalidatePath('/admin');
+}
+
 export async function addUser(formData: FormData): Promise<void> {
   await assertAdmin();
   const email = parseEmail(formData);

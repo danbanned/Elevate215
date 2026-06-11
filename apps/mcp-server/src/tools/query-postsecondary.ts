@@ -60,7 +60,7 @@ const inputSchema = {
 };
 
 export function registerQueryPostsecondary(server: McpServer): void {
-  server.registerTool(NAME, { description: DESCRIPTION, inputSchema }, (input) =>
+  server.registerTool(NAME, { description: DESCRIPTION, inputSchema, annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false } }, (input) =>
     runTool(NAME, input, async () => {
       const raw = input as Record<string, unknown>;
       const queryType = parseStr(raw, 'query_type') ?? '';
