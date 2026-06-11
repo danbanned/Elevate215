@@ -1,7 +1,9 @@
 import Google from 'next-auth/providers/google';
 import type { NextAuthConfig } from 'next-auth';
 
-const ALLOWED_DOMAIN = process.env['AUTH_ALLOWED_DOMAIN'] ?? 'launchpadphilly.org';
+const ALLOWED_DOMAINS = (process.env['AUTH_ALLOWED_DOMAIN'] ?? 'launchpadphilly.org')
+  .split(',')
+  .map((d) => d.trim().toLowerCase());
 
 export default {
   trustHost: true,
@@ -13,8 +15,8 @@ export default {
   ],
   callbacks: {
     signIn({ profile }) {
-      const email = profile?.email ?? '';
-      return email.endsWith(`@${ALLOWED_DOMAIN}`);
+      const email = (profile?.email ?? '').toLowerCase();
+      return ALLOWED_DOMAINS.some((domain) => email.endsWith(`@${domain}`));
     },
   },
   pages: {
