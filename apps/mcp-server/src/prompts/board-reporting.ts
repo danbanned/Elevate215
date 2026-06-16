@@ -160,41 +160,57 @@ ${extraClause}
 
 ## Step 1: Gather All Data
 
-Call these MCP tools in parallel to build a comprehensive data picture.
+Call these MCP tools in parallel. After each call, **write down the specific numbers you extracted** before moving on. Do not proceed to report building until you have documented every data point.
 
 ### Enrollment & program data:
-- \`query_enrollment\` with query_type "total" — current headcount
-- \`query_enrollment\` with query_type "by_phase" — phase distribution
-- \`query_enrollment\` with query_type "by_race" — demographic breakdown
-- \`query_enrollment\` with query_type "by_school" — school distribution
-- \`query_students\` — population details for narrative
+- \`query_enrollment\` with query_type "total" → extract: total count
+- \`query_enrollment\` with query_type "by_phase" → extract: count per phase (Foundations, 101, Lightspeed, LiftOff)
+- \`query_enrollment\` with query_type "by_race" → extract: count and % per race/ethnicity
+- \`query_enrollment\` with query_type "by_school" → extract: count per school
+- \`query_students\` → extract: enrollment_status breakdown (E, EP, EL, N counts for retention calc)
 
 ### Outcome data:
-- \`query_certifications\` with query_type "summary" — pass rates
-- \`query_certifications\` with query_type "by_type" — by certification type
-- \`query_employment\` with query_type "aggregate" — employment rates, wages
-- \`query_employment\` with query_type "by_employer" — top employers
-- \`query_postsecondary\` with query_type "summary" — college enrollment/completion
-- \`query_attendance\` with query_type "aggregate" — engagement rates
-- \`query_competency\` — skill development metrics if available
+- \`query_certifications\` with query_type "summary" → extract: total exams, passed count, failed count. Calculate: pass rate = passed / (passed + failed) * 100
+- \`query_certifications\` with query_type "by_type" → extract: per-cert-type pass/fail counts
+- \`query_certifications\` with query_type "by_phase" → extract: per-phase pass/fail counts
+- \`query_employment\` with query_type "aggregate" → extract: job_count, active_jobs, student_count, total_earned, avg_wage, avg_hours
+- \`query_employment\` with query_type "by_employer" → extract: top 5-10 employers with student counts
+- \`query_postsecondary\` with query_type "summary" → extract: total records, distinct students, graduates, graduation rate
+- \`query_attendance\` with query_type "aggregate" → extract: overall rate, per-cohort or per-phase rates if available
 
 ### Financial data:
-- \`get_finance_brief\` — snapshot
-- \`query_finances\` with query_type "ytd" — YTD performance
-- \`query_finances\` with query_type "budget_actuals" — budget vs actual
-- \`query_finances\` with query_type "fund_balances" — fund health
-- \`query_finances\` with query_type "phase_budget_summary" — cost by program
+- \`get_finance_brief\` → extract: fund balances (list each fund and amount), recent gifts (list amounts)
+- \`query_finances\` with query_type "ytd" → extract: every revenue and expense line item with its amount. Write down each line.
+- \`query_finances\` with query_type "budget_actuals" → extract: budget and actual for each line item. Calculate variances.
+- \`query_finances\` with query_type "fund_balances" → extract: each fund name and closing balance. Sum them for total cash.
+- \`query_finances\` with query_type "phase_budget_summary" → extract: budget per program phase
 
 ### Fundraising data:
-- \`query_donors\` with query_type "summary" — donor base overview
-- \`query_finances\` with query_type "dev_giving_history" — giving trends
-- \`query_finances\` with query_type "dev_grants_tracker" — active grants
-- \`query_finances\` with query_type "dev_prospect_pipeline" — pipeline
-- \`query_finances\` with query_type "dev_launchpad_pipeline" — LP-specific pipeline
+- \`query_donors\` with query_type "summary" → extract: total donor count, lifetime giving total, contributing gift count
+- \`query_finances\` with query_type "dev_giving_history" → extract: gift amounts, dates, campaigns. Sum for total raised.
+- \`query_finances\` with query_type "dev_grants_tracker" → extract: each grant name, amount, status, deadlines
+- \`query_finances\` with query_type "dev_prospect_pipeline" → extract: each prospect, ask amount, stage, likelihood
+- \`query_finances\` with query_type "dev_launchpad_pipeline" → extract: LP-specific pipeline entries
 
 ### Qualitative / context:
-- \`search_documents\` with query: "board" or "strategic plan" or "program update" — past reports, strategic context
-- \`search_conversations\` with query: "board" or "highlight" or "challenge" — recent team discussions about board-relevant topics
+- \`search_documents\` with query: "board" or "strategic plan" or "program update" — for narrative context
+- \`search_conversations\` with query: "student success" or "program highlight" — for anecdotes
+
+### After all calls complete:
+
+**Produce a DATA INVENTORY** before proceeding. List every metric you extracted from the tool results:
+
+\`\`\`
+METRIC                          | VALUE    | SOURCE TOOL & QUERY TYPE            | FIELD / DERIVATION
+Total enrollment                | [value]  | query_enrollment "total"            | direct from result
+Cert pass rate                  | [value]  | query_certifications "summary"      | pass_rate_pct field
+Employment avg wage             | [value]  | query_employment "aggregate"        | avg_wage field
+Total revenue YTD               | [value]  | query_finances "ytd"                | sum of revenue line items (list them)
+Cost per student                | [value]  | derived                             | total expenses / total enrollment
+...
+\`\`\`
+
+This inventory is your source of truth. Every number in the final report MUST appear here first. If a number isn't in the inventory, it doesn't go in the report. For derived metrics (dividing values from different tools), list the inputs and the division.
 
 ---
 
@@ -389,57 +405,67 @@ Trend: Improving / Stable / Declining
 KPIs to include:
 ${kpiTargets ? `Use the provided targets: ${kpiTargets}` : 'Derive targets from budget and historical data.'}
 
-Required KPIs:
-- Total enrollment (active students)
-- New enrollments this period
-- Retention rate (students who stayed enrolled)
-- Certification pass rate
-- Employment placement rate
-- Average hourly wage at placement
-- Postsecondary enrollment rate
-- Attendance rate
-- Total revenue (${period})
-- Total expenses (${period})
-- Net surplus/deficit
-- Cash on hand
-- Months of runway
-- Fundraising progress vs. goal
-- Donor count
-- Program expense ratio
+Required KPIs by category and the tool call that provides each:
+
+**ENROLLMENT & RETENTION** — from \`query_enrollment\`:
+- Total active enrollment → "total" query_type
+- Enrollment by phase → "by_phase" query_type
+- Demographic breakdown → "by_race" query_type
+- Retention → derive from enrollment_status counts in "by_student" or \`query_students\`
+
+**PROGRAM OUTCOMES** — use the computed values returned by each tool:
+- Certification pass rate → \`query_certifications\` "summary" returns pass_rate_pct, passed, failed, total
+- Certification breakdown → \`query_certifications\` "by_type" returns count and avg_score per type
+- Employment metrics → \`query_employment\` "aggregate" returns job_count, student_count, avg_wage, avg_hours, total_earned
+- Top employers → \`query_employment\` "by_employer"
+- Postsecondary → \`query_postsecondary\` "summary" returns total records, distinct students, graduates, graduation_rate
+- Attendance → \`query_attendance\` "aggregate" returns rate
+
+**FINANCIAL HEALTH** — from \`query_finances\` and \`get_finance_brief\`:
+- Revenue & expenses → "ytd" query_type returns line items with amounts
+- Budget vs actual → "budget_actuals" query_type
+- Fund balances → "fund_balances" query_type
+- Phase costs → "phase_budget_summary" query_type
+- For derived metrics (cost per student, months of runway, program expense ratio): divide the values the tools returned. Show the division in the Notes column.
+
+**FUNDRAISING** — from \`query_donors\` and \`query_finances\`:
+- Donor summary → \`query_donors\` "summary" returns donor count, lifetime giving, gift count
+- Giving history → \`query_finances\` "dev_giving_history"
+- Active grants → \`query_finances\` "dev_grants_tracker"
+- Pipeline → \`query_finances\` "dev_prospect_pipeline"
+
+**RULES:**
+- Use the values the tools return. If a tool returns a computed field (like pass_rate_pct or avg_wage), use it directly — do not re-derive it.
+- For metrics that require combining data from multiple tools (like cost per student = expenses / enrollment), show the division in the Notes column so the reviewer can verify.
+- If a tool doesn't return a value needed for a KPI, mark it \`[DATA UNAVAILABLE]\` — do not estimate.
 
 **SECTION 3: Financial Summary** → \`financial_summary.csv\`
 
-Columns: Category, ${period}, ${comparison}, Variance, Variance %, Notes
-Include: Revenue by source, Expenses by function, Net, Cash position.
+Columns: Category, Line Item, ${period} Amount, ${comparison} Amount, Variance, Variance %, Notes
+Build from \`query_finances\` "ytd" and "budget_actuals" results. Variance = Actual - Budget. Variance % = Variance / Budget * 100.
 
 Also produce: \`budget_vs_actual.csv\`
 Columns: Line Item, Budget, Actual, Variance, Variance %, Status
+Status: On Track (within 10%), Watch (10-20%), Over/Under Budget (>20%)
 
 **SECTION 4: Program Highlights**
-Plain text — 1-2 paragraphs per program phase covering:
-- Current enrollment and phase progression
-- Notable outcomes (certifications, placements, college enrollments)
-- 1 student highlight or anecdote if available from documents/conversations
-- Any challenges or changes
+Plain text — 1-2 paragraphs per program phase using data already gathered from the tools above. For each phase cite the enrollment count, certification results, employment outcomes, and attendance from the tool results. Flag any metric that declined vs comparison period.
 
 **SECTION 5: Fundraising Dashboard** → \`fundraising_dashboard.csv\`
 
-Columns: Metric, Value, Target, % of Target
-Rows: Total raised (${period}), Individual giving, Foundation/grant giving, Corporate giving, Government, Donor count, New donors, Donor retention rate, Pipeline value, Active grant applications.
+Columns: Metric, Value, Target, % of Target, Notes
+Populate from \`query_donors\` "summary", \`query_finances\` "dev_giving_history" and "dev_grants_tracker" results. Every value must come from a tool result.
 
 **SECTION 6: Development Pipeline** → \`development_pipeline.csv\`
 
 Columns: Funder/Prospect, Type, Stage, Ask Amount, Likelihood, Expected Close Date, Notes
+Pull directly from \`query_finances\` "dev_prospect_pipeline" and "dev_launchpad_pipeline" results. Do not add rows that aren't in the data.
 
 **SECTION 7: Items Requiring Board Action**
-Plain text — bullet list of decisions or approvals needed:
-- Budget amendments (if variances are significant)
-- Strategic questions
-- Upcoming major commitments
-- Risk items
+Plain text — ONLY flag items supported by the data. Cite the specific numbers from tool results. If no data supports a board action, say so.
 
 **SECTION 8: Upcoming Calendar**
-Plain text — key dates in the next quarter: grant deadlines, events, reporting dates, next board meeting.`;
+Plain text — only include dates that appear in tool results (grant deadlines from dev_grants_tracker, dates from search_documents). Do not invent dates.`;
 }
 
 function buildKPIDashboard(period: string, comparison: string, kpiTargets: string | undefined): string {
@@ -456,44 +482,39 @@ Trend values: Improving, Stable, Declining (based on comparison to ${comparison}
 
 ${kpiTargets ? `**User-provided targets:** ${kpiTargets}\nUse these exact targets. Fill in any KPIs not listed by deriving from budget/historical.` : '**No targets provided.** Derive targets from budget data and historical performance. Note each derived target with "[DERIVED]" in Notes.'}
 
-### KPI Categories:
+### KPI Categories and source tools:
 
-**ENROLLMENT & RETENTION**
-- Total active enrollment
-- New enrollments (${period})
-- Retention rate
-- Phase distribution (count per phase)
-- Demographic diversity index
+**ENROLLMENT & RETENTION** — from \`query_enrollment\`:
+- Total active enrollment → "total"
+- New enrollments → "active_during" with date filters
+- Retention → derive from enrollment_status counts
+- Phase distribution → "by_phase"
+- Demographics → "by_race"
 
-**PROGRAM OUTCOMES**
-- Certification exam attempts
-- Certification pass rate
-- Average certification score
-- Employment placement rate
-- Average hourly wage
-- Postsecondary enrollment rate
-- Postsecondary graduation rate (if tracking period is long enough)
-- Attendance rate
+**PROGRAM OUTCOMES** — use the computed values the tools return:
+- Certification pass rate, attempts, passed, failed → \`query_certifications\` "summary" (returns pass_rate_pct)
+- By cert type → \`query_certifications\` "by_type" (returns count, avg_score per type)
+- Employment rate, wages, earnings → \`query_employment\` "aggregate" (returns student_count, avg_wage, total_earned)
+- Postsecondary → \`query_postsecondary\` "summary" (returns graduation_rate, distinct students)
+- Attendance → \`query_attendance\` "aggregate" (returns rate)
 
-**FINANCIAL HEALTH**
-- Total revenue vs. budget
-- Total expenses vs. budget
-- Net surplus/deficit
-- Cash on hand
-- Months of runway
-- Program expense ratio (target: >80%)
-- Cost per student
-- Cost per certification earned
-- Cost per job placement
+**FINANCIAL HEALTH** — from \`query_finances\` and \`get_finance_brief\`:
+- Revenue & expenses → "ytd"
+- Budget vs actual → "budget_actuals"
+- Fund balances → "fund_balances"
+- Phase costs → "phase_budget_summary"
+- Derived metrics (cost per student, runway, expense ratio) → divide values from the tools above; show the division in Notes
 
-**FUNDRAISING**
-- Total raised vs. annual goal
-- Individual giving vs. goal
-- Institutional giving vs. goal
-- Donor count vs. target
-- Donor retention rate
-- Pipeline value
-- Grant success rate (awarded / applied)
+**FUNDRAISING** — from \`query_donors\` and \`query_finances\`:
+- Donor count & lifetime giving → \`query_donors\` "summary"
+- Giving history → \`query_finances\` "dev_giving_history"
+- Pipeline → \`query_finances\` "dev_prospect_pipeline"
+- Grants → \`query_finances\` "dev_grants_tracker"
+
+**RULES:**
+- Use the values the tools return directly. If the tool computes a rate or average, use that — don't re-derive.
+- For derived metrics (combining values from multiple tools), show the inputs and division in the Notes column.
+- \`[DATA UNAVAILABLE]\` for anything a tool doesn't return. Never estimate.
 
 ### SECONDARY OUTPUT: \`kpi_trends.csv\`
 
@@ -516,14 +537,30 @@ function buildProgramUpdate(period: string, comparison: string): string {
 
 **OUTPUT 1:** \`program_metrics.csv\`
 
-Columns: Phase, Enrolled, Completed, In Progress, Dropped, Completion Rate, Cert Pass Rate, Avg Attendance, Employment Rate, Avg Wage, College Enrollment Rate
+Columns: Phase, Enrolled, Completed, In Progress, Dropped, Completion Rate, Cert Pass Rate, Avg Attendance, Employment Rate, Avg Wage, College Enrollment Rate, Calculation Notes
 
 Rows: Foundations, 101, Lightspeed, LiftOff, ALL PROGRAMS (total)
 
+Populate each cell from the tool results gathered in Step 1:
+- **Enrolled** → from \`query_enrollment\` "by_phase"
+- **Completed / In Progress / Dropped** → from enrollment data if status breakdowns are available per phase; otherwise \`[DATA UNAVAILABLE]\`
+- **Completion Rate** → Completed / Enrolled if both are available
+- **Cert Pass Rate** → from \`query_certifications\` "by_phase" or "summary" — use the pass_rate_pct the tool returns
+- **Avg Attendance** → from \`query_attendance\` "aggregate" (note if not phase-specific)
+- **Employment Rate / Avg Wage** → from \`query_employment\` "aggregate" (note if not phase-specific)
+- **College Enrollment Rate** → from \`query_postsecondary\` "summary"
+- **ALL PROGRAMS row** → sum the counts; for rates, recalculate from totals (don't average percentages)
+
 **OUTPUT 2:** \`outcomes_detail.csv\`
 
-Columns: Outcome Category, Metric, ${period} Value, ${comparison} Value, Change, Notes
-Rows: All certification types (with pass rates each), employment metrics (placement rate, avg wage, avg hours, total earnings), postsecondary metrics (enrollment rate, by institution type), attendance (overall rate, by phase).
+Columns: Outcome Category, Metric, ${period} Value, ${comparison} Value, Change, Calculation Notes
+Rows:
+- Certification types: one row per cert type from \`query_certifications\` "by_type". Value = pass rate (passed/attempted*100). Show calc in Notes.
+- Employment: placement rate, avg wage, avg hours, total earnings — each from \`query_employment\` "aggregate". Show source field.
+- Postsecondary: enrollment rate, by institution type — from \`query_postsecondary\` "summary" and "by_institution".
+- Attendance: overall rate and by phase — from \`query_attendance\` "aggregate".
+
+For Change column: ${period} Value - ${comparison} Value. Positive = improvement, negative = decline.
 
 **OUTPUT 3:** \`employer_partners.csv\`
 
