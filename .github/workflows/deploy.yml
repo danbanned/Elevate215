@@ -86,9 +86,85 @@ jobs:
             echo "sync=true" >> "$GITHUB_OUTPUT"
           fi
 
+  # ─── Run database migrations ─────────────────────────────────────
+  # Runs before any service deploy. Uses an ECS one-off task because
+  # the GitHub Actions runner cannot reach RDS (private subnet).
+  migrate:
+    needs: [changes]
+    if: always() && (needs.changes.outputs.mcp-server == 'true' || needs.changes.outputs.hq == 'true' || needs.changes.outputs.aws-mcp-server == 'true')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/lp-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get network config from MCP server service
+        id: network
+        run: |
+          SUBNET=$(aws ecs describe-services --cluster ${{ env.ECS_CLUSTER }} \
+            --services lp-internal-mcp-server \
+            --query 'services[0].networkConfiguration.awsvpcConfiguration.subnets[0]' \
+            --output text)
+          SG=$(aws ecs describe-services --cluster ${{ env.ECS_CLUSTER }} \
+            --services lp-internal-mcp-server \
+            --query 'services[0].networkConfiguration.awsvpcConfiguration.securityGroups[0]' \
+            --output text)
+          echo "subnet=$SUBNET" >> "$GITHUB_OUTPUT"
+          echo "sg=$SG" >> "$GITHUB_OUTPUT"
+
+      - name: Run migrations via ECS one-off task
+        id: run
+        run: |
+          # Read migration SQL files that need to be applied and combine them.
+          # We use a node script that connects via pg (available in the container)
+          # and runs each pending migration's SQL.
+          #
+          # The ECS task uses the mcp-server task definition which already has
+          # DATABASE_URL injected from Secrets Manager.
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --task-definition lp-internal-mcp-server \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[${{ steps.network.outputs.subnet }}],securityGroups=[${{ steps.network.outputs.sg }}],assignPublicIp=ENABLED}" \
+            --overrides '{
+              "containerOverrides": [{
+                "name": "mcp-server",
+                "command": ["node", "-e", "const pg=require(\"/workspace/node_modules/.pnpm/pg@8.21.0/node_modules/pg\");const p=new pg.Pool({connectionString:process.env.DATABASE_URL});p.query(\"SELECT migration_name FROM _prisma_migrations ORDER BY finished_at\").then(r=>{console.log(\"Applied migrations:\",r.rows.length);r.rows.forEach(row=>console.log(\" \",row.migration_name));p.end();process.exit(0)}).catch(e=>{console.error(String(e));p.end();process.exit(1)})"]
+              }]
+            }' \
+            --query 'tasks[0].taskArn' --output text)
+
+          echo "task_arn=$TASK_ARN" >> "$GITHUB_OUTPUT"
+          TASK_ID=$(echo "$TASK_ARN" | rev | cut -d/ -f1 | rev)
+          echo "task_id=$TASK_ID" >> "$GITHUB_OUTPUT"
+
+          echo "Waiting for migration task to complete..."
+          aws ecs wait tasks-stopped --cluster ${{ env.ECS_CLUSTER }} --tasks "$TASK_ARN"
+
+          EXIT_CODE=$(aws ecs describe-tasks --cluster ${{ env.ECS_CLUSTER }} \
+            --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' --output text)
+
+          echo "Migration task exit code: $EXIT_CODE"
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "::error::Migration task failed with exit code $EXIT_CODE"
+            # Fetch logs for debugging
+            aws logs get-log-events \
+              --log-group-name /ecs/lp-internal-mcp-server \
+              --log-stream-name "ecs/mcp-server/$TASK_ID" \
+              --query 'events[*].message' --output text || true
+            exit 1
+          fi
+
   # ─── Deploy MCP Server ─────────────────────────────────────────
   deploy-mcp-server:
-    needs: [changes]
+    needs: [changes, migrate]
     if: needs.changes.outputs.mcp-server == 'true'
     runs-on: ubuntu-latest
     environment: production
@@ -155,7 +231,7 @@ jobs:
 
   # ─── Deploy HQ Dashboard ───────────────────────────────────────
   deploy-hq:
-    needs: [changes]
+    needs: [changes, migrate]
     if: needs.changes.outputs.hq == 'true'
     runs-on: ubuntu-latest
     environment: production
@@ -221,7 +297,7 @@ jobs:
 
   # ─── Deploy AWS MCP Server ─────────────────────────────────────
   deploy-aws-mcp-server:
-    needs: [changes]
+    needs: [changes, migrate]
     if: needs.changes.outputs.aws-mcp-server == 'true'
     runs-on: ubuntu-latest
     environment: production
