@@ -20,7 +20,7 @@ const DESCRIPTION =
 export function registerSkillGrantProspecting(server: McpServer): void {
   server.registerTool(
     NAME,
-    { description: DESCRIPTION, inputSchema: grantProspectingArgsSchema },
+    { description: DESCRIPTION, inputSchema: grantProspectingArgsSchema, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
     (input) =>
       runTool(NAME, input, async () => {
         const raw = input as Record<string, unknown>;

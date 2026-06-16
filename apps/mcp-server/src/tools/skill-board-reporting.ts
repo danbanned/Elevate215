@@ -18,7 +18,7 @@ const DESCRIPTION =
 export function registerSkillBoardReporting(server: McpServer): void {
   server.registerTool(
     NAME,
-    { description: DESCRIPTION, inputSchema: boardReportingArgsSchema },
+    { description: DESCRIPTION, inputSchema: boardReportingArgsSchema, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
     (input) =>
       runTool(NAME, input, async () => {
         const raw = input as Record<string, unknown>;
