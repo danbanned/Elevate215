@@ -20,31 +20,135 @@ Three principles the client CTO operates by, which shape every section below:
 
 ## 1. AWS
 
-### What the client already has
+Most clients we work with are small-to-medium nonprofits, not enterprises with multi-account AWS Organizations. The AWS setup needs to accommodate two realities: the client we typically encounter, and the more sophisticated client who brings their own infrastructure.
 
-- An AWS Organization with at least four accounts: `mgmt` (root/billing), `security-audit` (CloudTrail + Config aggregator), `shared-services` (ECR, central DNS, transit gateway), and per-workload accounts (`dev`, `prod`).
-- Service Control Policies that deny: root user actions, region use outside `us-east-1` / `us-east-2`, disabling CloudTrail/GuardDuty, IAM user creation in workload accounts, public S3 buckets.
-- IAM Identity Center as the only human entry point. Permission sets are git-controlled.
-- A platform Terraform repo that owns VPCs, transit gateway, baseline IAM roles, KMS keys, CMK rotation schedules.
-- A FinOps tagging contract: every taggable resource has `CostCenter`, `Application`, `Environment`, `Owner`. Untagged resources get flagged in a weekly report.
+### Typical client (most engagements)
 
-### What the client will grant us
+**What they have:**
+- A single AWS account, often newly created for this project. No Organization, no SCPs, no multi-account hierarchy.
+- One IAM user with broad permissions (often `AdministratorAccess`) used by whoever set up the account. No IAM Identity Center, no SSO federation.
+- No existing VPC, ECS cluster, or infrastructure primitives. We build everything.
 
-- **A dedicated workload account**, `lp-internal-prod` (and `-dev`). We operate inside it. We do **not** get anything in `mgmt` or `security-audit`.
-- **One SSO permission set** mapped to our engineers — `LPInternalAppDeveloper`. It is `PowerUserAccess` *minus* IAM, *minus* Organizations, *minus* account-level CloudTrail/Config, scoped to the workload account only. Our engineers do exploratory work and console debugging through this, never via static keys.
-- **A GitHub OIDC trust** so our CI in our repo can assume a deploy role in the workload account. The deploy role is the *only* identity that gets to mutate production resources, and its policy is tight — it can manage exactly the resources Terraform owns.
-- **A pre-provisioned VPC** with public/private/database subnet tiers, NAT, route tables, baseline security groups, all tagged. We consume the VPC and subnet IDs as Terraform variables; we don't create networking.
-- **A KMS CMK** (`alias/lp-internal`) with rotation enabled. We use this for RDS storage, Secrets Manager, and any S3 buckets. The policy already grants `kms:Decrypt` to the runtime roles we'll create.
-- **A Secrets Manager prefix** `lp-internal/*` carved out for us. Our runtime roles read from it; our CI role can write to it; nothing else in the account can touch it.
+**How we actually set it up (current reality):**
 
-### What the client wants from us
+This is how our reference deployment is configured:
 
-- The current `docs/runbooks/aws-permissions.md` is the right shape but conflates **build-time IAM** with **runtime IAM**. The client only cares about the runtime policies — build-time happens through Terraform PRs against the workload account's IaC repo, where the platform team reviews and merges. The "builder IAM user" section is stripped out of the handover; it's replaced by the Terraform module that defines all six runtime roles.
-- The six JSON policies in `infra/iam/` are good. Two changes required before merge:
-  - Replace the inline `kms:ViaService: secretsmanager.us-east-1.amazonaws.com` condition with a `kms:KeyArn` condition naming the client's CMK ARN. "Any key Secrets Manager uses" is broader than "the key the client gave us."
-  - Add `aws:ResourceTag/Application: lp-internal` conditions to the S3 and CloudWatch Logs statements in `lp-sync-task-policy.json`. Tag-based scoping is how the client enforces blast radius across the whole account.
-- An **egress inventory**: every external host our app talks to (OpenAI, Anthropic, GitHub raw, GiveButter, Aplos, Slack, Notion, Google APIs). If the list is short and stable, the client will consider VPC endpoints / PrivateLink where they exist (Secrets Manager, S3, ECR). For everything else we go through the client's egress firewall, and they will need to allowlist destinations.
-- An **incident playbook**: who do they call when the app is on fire at 2 AM? What metric do they watch? What's the rollback procedure?
+| Resource | What exists | How it was created |
+|---|---|---|
+| **IAM user** | `userID` — used for CLI access during setup | Created manually in console. Scoped permissions (not full IAM admin — cannot create OIDC providers, for example). |
+| **IAM roles (5)** | `lp-ecs-execution-role`, `lp-ecs-task-role`, `lp-ecs-infra-role`, `lp-ecs-task-execution-role`, `lp-eventbridge-invoke-role` | Created via CLI during setup phases. Policies defined in `infra/iam/*.json`. |
+| **ECS cluster** | `lp-internal` | One cluster, three long-running services (mcp-server, hq, aws-mcp-server), plus on-demand sync tasks. |
+| **ECS services (3)** | `lp-internal-mcp-server` (1 task), `lp-internal-hq` (1 task), `lp-internal-aws-mcp-server` (1 task) | All Fargate ARM64, behind ALB target groups. Task definitions in `infra/ecs/*.json` with `${AWS_ACCOUNT_ID}` placeholders. |
+| **ECR repos (4)** | `lp-internal/mcp-server`, `lp-internal/hq`, `lp-internal/aws-mcp-server`, `lp-internal/sync` | Created during setup. Images built locally or in CI, pushed to ECR, deployed to ECS. |
+| **Secrets Manager** | `lp-internal/*` prefix | 10+ secrets covering database, API keys, OAuth, JWT. Runtime roles have read access; builder user has write access. |
+| **RDS** | Postgres 16 with pgvector | Single instance, `us-east-1`. Connection string in Secrets Manager. |
+| **GitHub Actions OIDC** | Pending setup | `lp-github-deploy` role and policy defined in `infra/iam/lp-github-deploy-*.json`. OIDC provider creation requires IAM admin permissions (blocked on approval). |
+
+**Key gap: no Terraform.** The current setup was done via CLI commands following the `docs/setup/` phase guides. The `infra/iam/*.json` and `infra/ecs/*.json` files define the resources declaratively but are applied manually, not through a pipeline. This is acceptable for a single deployment but doesn't scale to multiple clients. The path forward is `infra/terraform/` modules (see section 12).
+
+**Key gap: IAM user, not federated identity.** The builder IAM user (`userID`) has static access keys and scoped (not admin) permissions. For production client handoffs, this should be replaced with IAM Identity Center or at minimum time-limited credentials. For the initial buildout with a small client, a single IAM user with scoped permissions and MFA is pragmatically fine.
+
+### Sophisticated client (enterprise engagements)
+
+These clients bring their own infrastructure and expect us to consume it, not create our own:
+
+- An AWS Organization with workload accounts, SCPs, IAM Identity Center, and a platform team.
+- A pre-provisioned VPC with public/private/database subnets, NAT, and tagged security groups.
+- A KMS CMK for encryption at rest. They expect us to use it, not the AWS-managed key.
+- A Terraform or CDK repo where all infrastructure changes are reviewed as PRs.
+- A FinOps tagging requirement on every resource.
+
+**What they grant us:**
+- A dedicated workload account (or namespace within one). We operate inside it, nothing in mgmt or security accounts.
+- An SSO permission set for our engineers — `PowerUserAccess` minus IAM, scoped to the workload account.
+- A GitHub OIDC trust for our CI deploy role — the only identity that can mutate production.
+- A Secrets Manager prefix (`lp-internal/*`) and KMS key grants for our runtime roles.
+
+**What they want from us:**
+- The policies in `infra/iam/` adapted to their conventions: `kms:KeyArn` conditions referencing their specific CMK (not the broad `kms:ViaService` pattern), `aws:ResourceTag/Application: lp-internal` conditions on S3 and CloudWatch statements for blast-radius scoping.
+- An **egress inventory**: every external host the app contacts (OpenAI, Anthropic, GiveButter, Aplos, Slack, Notion, Google APIs, Sentry). Their egress firewall needs to allowlist these.
+- An **incident playbook**: who to call, what to watch, how to roll back.
+- Infrastructure delivered as Terraform modules, not CLI scripts.
+
+### Secure credential provisioning during onboarding
+
+During setup, the client gathers API keys, service account credentials, and connection strings from their various systems. These secrets ultimately live in AWS Secrets Manager at runtime — the question is how they get there.
+
+There are two paths depending on the client's infrastructure maturity. **Option A is preferred** because the implementation team never sees the credentials at all.
+
+---
+
+#### Option A: Client provisions secrets directly into AWS (preferred)
+
+This is the right path when the client has AWS infrastructure and an ops person who can use the Secrets Manager console or CLI.
+
+**How it works:**
+
+1. We provide the client a **secrets contract** — the exact Secrets Manager paths and key names the application expects (see table below).
+2. The client's team provisions each credential from the source system (GiveButter admin panel, Google Workspace admin, Aplos account settings, etc.) and writes it directly into Secrets Manager under the `lp-internal/*` prefix.
+3. The implementation team **never sees the credentials**. We see only whether the secret exists and whether the app can read it successfully at startup.
+4. For secrets we generate (AUTH_SECRET, JWT keys, SYNC_SECRET), we generate them, write them to Secrets Manager, and provide the client the Secrets Manager paths so they can access them if needed for rotation or disaster recovery.
+
+**Why this is preferred:** zero credential exposure to the implementation team. The client provisions from source → AWS directly. No intermediary, no shared vault, no transfer step. The blast radius of a compromise is smaller because the credentials never exist outside the source system and Secrets Manager.
+
+**The secrets contract:**
+
+| Secrets Manager Path | Key(s) | Source | Who provisions |
+|---|---|---|---|
+| `lp-internal/db` | `DATABASE_URL` | RDS / client DBA | Client |
+| `lp-internal/google` | `GOOGLE_SERVICE_ACCOUNT_JSON` | Client Workspace admin | Client |
+| `lp-internal/openai` | `OPENAI_API_KEY` | Client's OpenAI org | Client |
+| `lp-internal/anthropic` | `ANTHROPIC_API_KEY` | Client's Anthropic org | Client |
+| `lp-internal/givebutter` | `GIVEBUTTER_API_KEY` | Client's GiveButter admin | Client |
+| `lp-internal/aplos` | `APLOS_CLIENT_ID`, `APLOS_API_KEY` | Client's Aplos admin | Client |
+| `lp-internal/slack` | `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET` | Client's Slack admin | Client |
+| `lp-internal/notion` | `NOTION_API_KEY` | Client's Notion admin | Client |
+| `lp-internal/roam` | `ROAM_API_KEY`, `ROAM_GRAPH_NAME` | Client's Roam admin | Client |
+| `lp-internal/sentry` | `SENTRY_DSN_HQ`, `SENTRY_DSN_MCP` | Client's Sentry project | Client |
+| `lp-internal/nextauth` | `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` | OAuth setup + client GCP | Both |
+| `lp-internal/jwt-signing` | `JWT_PRIVATE_KEY`, `JWT_KID` | Generated during setup | Implementation team |
+| `lp-internal/sync` | `SYNC_SECRET` | Generated during setup | Implementation team |
+
+We provide this table to the client as a checklist. They check each one off as they provision it. We verify the app starts cleanly.
+
+---
+
+#### Option B: Shared password manager (for clients without AWS infrastructure)
+
+This is the path when we are setting up AWS infrastructure on behalf of the client — they don't yet have Secrets Manager, or they don't have anyone who can provision secrets into it. In this case, the client needs a secure way to transfer credentials to the implementation team so we can wire them into the infrastructure we're building.
+
+**Secrets must never travel through email, Slack, text, or any unencrypted channel.**
+
+**Required: a shared password manager vault.**
+
+The client creates a shared vault in their password manager (1Password, Bitwarden, LastPass, or equivalent) dedicated to the engagement. Both parties access it through their own authenticated accounts. This is the **only** approved channel for credential transfer.
+
+**Process:**
+
+1. **Client creates the vault.** Name it something obvious: `Internal AI — Credentials`. Invite the implementation team's designated contact(s) — not the whole team, just whoever is wiring secrets into infrastructure.
+2. **Client adds credentials as they're provisioned.** Each entry should include:
+   - The credential itself (API key, JSON key file, connection string, etc.)
+   - Which service it's for (e.g., "GiveButter API Key — read-only")
+   - Who issued it and when
+   - Expiration or rotation schedule if applicable
+   - Any scope restrictions ("read-only", "scoped to lp-internal-* datasets", etc.)
+3. **Implementation team reads credentials from the vault and provisions them into AWS Secrets Manager** under the `lp-internal/*` prefix. Once a secret is in Secrets Manager, the running application reads it from there — the password manager is the human handoff channel, not the runtime path.
+4. **After production go-live, remove implementation team access to the vault.** The client retains it for their own rotation schedule. Future rotations: client updates the vault entry, notifies the ops team, who updates Secrets Manager.
+
+Secrets generated by the implementation team (AUTH_SECRET, JWT keys, SYNC_SECRET) are placed in the vault so the client has them for continuity after handoff.
+
+**If the client does not have a password manager:** this is the first thing to set up. A 1Password Teams account ($4/user/month) or Bitwarden Organization (free for small teams) is the minimum viable starting point. Do not proceed with credential sharing until this is in place.
+
+---
+
+#### Key rotation (both options)
+
+Regardless of which path is used for initial provisioning, the rotation process is the same:
+
+1. Client rotates the credential in the source system.
+2. Client (Option A) or ops team (Option B) updates the value in Secrets Manager.
+3. ECS services pick up the new value on their next deployment or task restart. No application code change required — `@lp-ai/lib-config` reads from Secrets Manager at startup.
+4. Verify the affected connector or service starts cleanly after rotation.
 
 ### How the existing setup docs change
 
@@ -68,7 +172,7 @@ Three principles the client CTO operates by, which shape every section below:
 
 ### What the client will grant us
 
-- **One service account** they create. They deliver the JSON key to us via 1Password (or the standard secrets handoff process) — not email, not Slack.
+- **One service account** they create. They provision the JSON key directly into Secrets Manager (Option A above) or deliver it via the shared password manager vault (Option B) — never email, never Slack.
 - **Scopes restricted at creation**: `drive.readonly`, `spreadsheets.readonly`, `bigquery.dataViewer`, `bigquery.jobUser`. No `bigquery.admin`. No write scopes anywhere.
 - **Surgical access**: the service account is added as a member to a *specific* Shared Drive folder we'll work from, not domain-wide. Same for the specific Sheets — added per-file. If a sheet isn't in the explicit allowlist, we can't read it.
 - **BigQuery**: dataset-level IAM, not project-level. We read `analytics.lp_internal_*` views. If we need new fields, the client's data engineering team adds them; we don't create tables.
