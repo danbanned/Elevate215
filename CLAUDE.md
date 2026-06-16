@@ -157,8 +157,9 @@ packages/config      → Zod env schema, AWS Secrets Manager loader
    )
    ON CONFLICT ("tool_name") DO NOTHING;
    ```
-   Categories: `students`, `donor_finance`, `search`, `skills`, `future`. Roles: `pending`, `program_staff`, `development`, `sales`, `finance`, `software_dev`, `leadership`, `admin`. The tool will also appear on the HQ `/admin` page where admins can adjust role access without code changes.
-7. Apply the migration locally (`pnpm db:migrate`) and to production (via ECS one-off task or bastion — RDS is not publicly accessible)
+   Categories: `students`, `donor_finance`, `search`, `skills`, `future`. Roles: `pending`, `program_staff`, `development`, `sales`, `finance`, `software_dev`, `leadership`, `admin`. The tool will appear on the HQ `/admin` page where admins can adjust role access without code changes.
+7. **If using a new category**, add it to `CATEGORY_ORDER` and `CATEGORY_LABELS` in `apps/hq/app/admin/PermissionsMatrix.tsx`. Existing categories (`students`, `donor_finance`, `search`, `skills`, `future`, `other`) don't need this step — only new ones. Without this, tools in the new category won't render on the admin page.
+8. Apply the migration locally (`pnpm db:migrate`) and to production (via ECS one-off task or bastion — RDS is not publicly accessible)
 
 ### Implementing a connector
 
