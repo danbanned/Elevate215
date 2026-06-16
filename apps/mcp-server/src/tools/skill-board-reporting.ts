@@ -29,6 +29,9 @@ export function registerSkillBoardReporting(server: McpServer): void {
           comparison_period: parseStr(raw, 'comparison_period'),
           kpi_targets: parseStr(raw, 'kpi_targets'),
           committee: parseStr(raw, 'committee'),
+          presentation_template: parseStr(raw, 'presentation_template'),
+          graph_preferences: parseStr(raw, 'graph_preferences'),
+          key_metrics: parseStr(raw, 'key_metrics'),
           audience_notes: parseStr(raw, 'audience_notes'),
           additional_context: parseStr(raw, 'additional_context'),
         };

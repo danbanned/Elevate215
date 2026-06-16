@@ -53,6 +53,34 @@ export const boardReportingArgsSchema = {
     .enum(['finance', 'program', 'development', 'governance', 'executive'])
     .optional()
     .describe('For committee_report: which committee. Determines the data focus.'),
+  presentation_template: z
+    .string()
+    .optional()
+    .describe(
+      'Describe or paste the structure of your existing board packet template. Include: ' +
+      'slide/page order, section names, what goes on each slide, any standard headers/footers, ' +
+      'branding notes (colors, logo placement). If you have a Google Slides or PowerPoint URL, ' +
+      'provide it and the system will attempt to match that structure. ' +
+      'If not provided, the system will propose a default structure and ask for approval.',
+    ),
+  graph_preferences: z
+    .string()
+    .optional()
+    .describe(
+      'What graphs/charts the board expects. Examples: ' +
+      '"bar chart for enrollment by phase, line chart for monthly revenue trend, ' +
+      'pie chart for expense allocation, gauge for fundraising progress". ' +
+      'If not provided, the system will propose chart types and ask for approval.',
+    ),
+  key_metrics: z
+    .string()
+    .optional()
+    .describe(
+      'The specific metrics the board wants to see, in priority order. Example: ' +
+      '"1. Total enrollment, 2. Cert pass rate, 3. Employment placement rate, ' +
+      '4. Revenue vs budget, 5. Cash runway, 6. Donor count". ' +
+      'If not provided, the system will propose a metrics list and ask for approval.',
+    ),
   audience_notes: z
     .string()
     .optional()
@@ -73,6 +101,9 @@ interface PromptArgs {
   comparison_period?: string | undefined;
   kpi_targets?: string | undefined;
   committee?: string | undefined;
+  presentation_template?: string | undefined;
+  graph_preferences?: string | undefined;
+  key_metrics?: string | undefined;
   audience_notes?: string | undefined;
   additional_context?: string | undefined;
 }
@@ -82,6 +113,9 @@ export function buildBoardReportingMessages(args: PromptArgs): GetPromptResult {
   const meetingDate = args.meeting_date ?? 'the upcoming board meeting';
   const comparison = args.comparison_period ?? 'annual targets';
   const hasTargets = !!args.kpi_targets?.trim();
+  const hasTemplate = !!args.presentation_template?.trim();
+  const hasGraphPrefs = !!args.graph_preferences?.trim();
+  const hasKeyMetrics = !!args.key_metrics?.trim();
   const audienceClause = args.audience_notes
     ? `\n\n**Board audience notes:** ${args.audience_notes}`
     : '';
@@ -100,6 +134,10 @@ You have access to the organization's live data through MCP tools. You MUST call
 2. **NEVER DISTRIBUTE EXTERNALLY.** You produce drafts for internal review. The ED/staff must review before the packet goes to the board. End every report with a review prompt.
 
 3. **BOARD-APPROPRIATE TONE.** Write for strategic leaders: lead with headlines, explain significance, flag what needs their attention or decision. Avoid operational jargon. If a metric is bad, say so clearly — boards need honest reporting, not spin.
+
+## INTERACTION MODEL
+
+For board packets, you MUST confirm the presentation format, visual template, metrics, and graph preferences with the user BEFORE drafting. Do NOT skip these checkpoints — a board packet that doesn't match the board's expected format wastes everyone's time.
 
 ## OUTPUT FORMAT
 
@@ -160,15 +198,139 @@ Call these MCP tools in parallel to build a comprehensive data picture.
 
 ---
 
-## Step 2: Build the Report
+## Step 2: Confirm Format, Metrics & Visuals
 
-${buildReportTypeInstructions(args)}
+Before drafting anything, you MUST confirm the presentation format, key metrics, and graph preferences with the user. This ensures the output matches what the board expects.
+
+### 2a. Presentation Template
+
+${hasTemplate ? `The user provided a template description:
+
+> ${args.presentation_template}
+
+Review this template and confirm your understanding: "I'll structure the packet to match your template: [restate the structure]. Is that correct, or should I adjust anything?"` : `**No template was provided.** Present a proposed slide/page structure and ask the user to confirm or modify:
+
+"Before I draft the packet, I need to know the format your board expects. Here's a proposed structure:
+
+**Slide 1:** Cover — meeting date, organization name, reporting period
+**Slide 2:** KPI Scorecard — traffic-light status for key metrics
+**Slide 3:** Financial Summary — revenue, expenses, net, cash position
+**Slide 4:** Budget vs. Actual — bar chart with variance highlights
+**Slide 5:** Program Enrollment & Outcomes — by phase
+**Slide 6:** Fundraising Progress — vs. annual goal
+**Slide 7:** Development Pipeline — active grants and prospects
+**Slide 8:** Highlights & Stories — 1-2 student/program highlights
+**Slide 9:** Challenges & Risks — honest assessment
+**Slide 10:** Items for Board Action — decisions needed
+**Slide 11:** Upcoming Calendar — key dates next quarter
+
+Do you have an existing PowerPoint or Google Slides template I should match? If so, please share it (URL or describe the layout — colors, logo placement, slide order, what goes where). Otherwise, confirm this structure works or tell me what to change."
+
+**Wait for the user's response before proceeding.**`}
+
+### 2b. Key Metrics
+
+${hasKeyMetrics ? `The user specified these key metrics (in priority order):
+
+> ${args.key_metrics}
+
+Confirm: "I'll feature these metrics as the primary KPIs in the scorecard: [restate]. I'll also include supporting metrics where relevant. Does this look right?"` : `${hasTargets ? `The user provided KPI targets (${args.kpi_targets}) but didn't specify which metrics to prioritize.` : 'No specific metrics were provided.'}
+
+**Propose a metrics list and ask for confirmation:**
+
+"Which metrics matter most to your board? Here's what I'd recommend based on the data available, in priority order:
+
+**Program Metrics:**
+1. Total active enrollment
+2. Certification pass rate
+3. Employment placement rate
+4. Average hourly wage
+5. Postsecondary enrollment rate
+6. Attendance rate
+
+**Financial Metrics:**
+7. Revenue vs. budget
+8. Net surplus/deficit
+9. Cash on hand / months of runway
+10. Program expense ratio
+
+**Fundraising Metrics:**
+11. Total raised vs. annual goal
+12. Donor count
+13. Pipeline value
+
+Please:
+- Reorder these by what your board cares about most
+- Remove any that aren't relevant
+- Add any I'm missing (e.g., specific program outcomes, specific fund balances)
+- For each metric, tell me the **target** if you have one (e.g., 'cert pass rate: 85%')"
+
+**Wait for the user's response before proceeding.**`}
+
+### 2c. Graphs & Visualizations
+
+${hasGraphPrefs ? `The user specified these graph preferences:
+
+> ${args.graph_preferences}
+
+Confirm: "I'll describe these visualizations in the output so you can create them: [restate]. Any changes?"` : `**Propose graph types and ask for confirmation:**
+
+"What graphs/charts does your board expect to see? I'll describe each visualization with the exact data so you can create them in your presentation tool. Here's what I'd recommend:
+
+1. **KPI Scorecard** — table with traffic-light color coding (green/yellow/red)
+2. **Revenue vs. Budget** — horizontal bar chart (actual vs. budget by category)
+3. **Monthly Revenue & Expense Trend** — line chart (12-month trailing)
+4. **Enrollment by Phase** — stacked bar or pie chart
+5. **Fundraising Progress** — progress bar or gauge (raised vs. goal)
+6. **Program Outcomes** — grouped bar chart (cert rate, employment rate, college rate by phase)
+7. **Expense Allocation** — pie chart (program vs. admin vs. fundraising)
+
+For each graph, I'll output the underlying data as CSV so you can plug it directly into your charting tool.
+
+Please confirm which charts you want, modify any, or add others."
+
+**Wait for the user's response before proceeding.**`}
 
 ---
 
-## Step 3: Final Quality Check
+## Step 3: Build the Report
+
+Use the confirmed format, metrics, and graph preferences from Step 2. Structure the output to match the user's template.
+
+${buildReportTypeInstructions(args)}
+
+### Graph Data
+
+For each confirmed graph/chart, output a dedicated CSV file with the data needed to create it:
+
+\`--- FILENAME: chart_[name].csv ---\`
+
+Each chart CSV should include:
+- Column headers that map directly to chart axes/series
+- Data sorted in the order it should appear in the chart
+- A comment row at the top: \`# Chart Type: [bar/line/pie/gauge], Title: [title], X-Axis: [label], Y-Axis: [label]\`
+
+Example:
+\`\`\`
+--- FILENAME: chart_revenue_vs_budget.csv ---
+\`\`\`
+\`\`\`csv
+# Chart Type: horizontal bar, Title: Revenue vs Budget (YTD), X-Axis: Category, Y-Axis: Amount
+Category,Actual,Budget
+"Grants & Contributions",142000,150000
+"Government Contracts",85000,80000
+"Individual Giving",45000,60000
+"Earned Revenue",12000,15000
+\`\`\`
+
+---
+
+## Step 4: Final Quality Check
 
 Before outputting, verify:
+- [ ] Format matches the user's confirmed template (slide order, sections, branding notes)
+- [ ] Only the user's confirmed metrics are featured as primary KPIs
+- [ ] Every confirmed graph has a corresponding \`chart_*.csv\` data file
 - [ ] Every number comes from a tool call — zero fabricated data
 - [ ] All CSV blocks have a labeled filename
 - [ ] CSV uses raw numeric values (no $ signs, no commas in numbers)
