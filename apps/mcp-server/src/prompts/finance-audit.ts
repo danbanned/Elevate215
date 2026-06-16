@@ -169,13 +169,52 @@ ${reportInstructions}
 
 ---
 
-## Final Output Rules
+## Output Format: CSV
 
-- **Every number must trace to a tool call.** If you cite "$142,000 in program expenses," you must have gotten that from a specific query_finances call.
-- **Flag ALL discrepancies.** Use \`[RECONCILIATION NEEDED: ...]\` for any mismatches between data sources.
-- **Flag ALL missing data.** Use \`[DATA UNAVAILABLE: ...]\` when a tool returns no data for a required field.
-- **Use consistent formatting.** Dollar amounts with commas and two decimals ($12,345.67). Percentages with one decimal (87.3%). Dates in Month YYYY format.
-- **Clearly label data sources.** Each section should note which tool/query produced the numbers.
+**All tabular data MUST be output as CSV.** The user needs data they can open in Excel or Google Sheets — not markdown tables in a chat window.
+
+### How to structure the output:
+
+1. **Start with a brief narrative summary** (2-3 sentences) explaining what the report covers and flagging anything notable.
+
+2. **Output each table as a separate, clearly labeled CSV block.** Use this format:
+
+\`\`\`
+--- FILENAME: income_statement_${period.replace(/\\s+/g, '_').toLowerCase()}.csv ---
+\`\`\`
+\`\`\`csv
+Category,${period},Budget,Variance,Variance %
+"Grants & Contributions",142000.00,150000.00,-8000.00,-5.3%
+"Government Contracts",85000.00,80000.00,5000.00,6.3%
+...
+\`\`\`
+
+3. **Use proper CSV conventions:**
+   - First row is always headers
+   - Wrap text fields containing commas in double quotes
+   - Numbers as raw values (no $ signs, no commas in numbers) — formatting happens in the spreadsheet
+   - Percentages as decimal values with % suffix (e.g., 5.3%)
+   - Empty cells for unavailable data with a \`[DATA UNAVAILABLE]\` note row at the bottom
+   - Dates in YYYY-MM-DD format
+
+4. **Produce one CSV block per logical table.** Typical outputs by report type:
+   - **monthly_close:** income_statement.csv, fund_balances.csv, budget_vs_actual_by_phase.csv, key_metrics.csv
+   - **audit_prep:** revenue_by_fund.csv, revenue_by_funder.csv, functional_expenses.csv, restricted_funds.csv, large_transactions.csv, reconciliation_flags.csv
+   - **funder_report:** grant_budget_vs_actual.csv, outcomes_delivered.csv, cost_per_outcome.csv
+   - **board_financials:** financial_snapshot.csv, program_investment.csv, fundraising_pipeline.csv
+   - **fund_reconciliation:** balance_comparison.csv, restricted_fund_status.csv, recommended_journal_entries.csv
+   - **custom_query:** query_results.csv
+
+5. **After the CSV blocks, include:**
+   - A \`flags.csv\` with all \`[RECONCILIATION NEEDED]\` and \`[DATA UNAVAILABLE]\` items: columns Flag Type, Description, Source A, Source B, Variance, Recommended Action
+   - A notes section (plain text, not CSV) with any narrative context, caveats, or action items
+
+### Data integrity rules:
+
+- **Every number must trace to a tool call.** If you output 142000.00, you must have gotten that from a specific query_finances call.
+- **Flag ALL discrepancies.** Include in flags.csv: \`RECONCILIATION NEEDED,"source A shows $X source B shows $Y",X,Y,variance,action\`
+- **Flag ALL missing data.** Include in flags.csv: \`DATA UNAVAILABLE,"description of what's missing","tool checked","","",""\`
+- **Clearly label data sources.** Add a "Source" column to each CSV where practical, or a source_notes.csv mapping each table to the tool calls that produced it.
 
 **"This is a draft financial report for internal review. All figures should be verified by the finance team before distribution to the board, funders, or auditors."**`;
 
@@ -197,49 +236,30 @@ function buildMonthlyClose(period: string, comparison: string): string {
 **1. Executive Summary**
 One paragraph: total revenue, total expenses, net surplus/deficit for ${period}. Flag anything unusual.
 
-**2. Income Statement (Statement of Activities)**
-\`\`\`
-                          ${period}      ${comparison || 'Budget'}     Variance    Var %
-REVENUE
-  Grants & Contributions   $___          $___          $___        ___%
-  Government Contracts     $___          $___          $___        ___%
-  Earned Revenue           $___          $___          $___        ___%
-  In-Kind                  $___          $___          $___        ___%
-  Other Income             $___          $___          $___        ___%
-TOTAL REVENUE              $___          $___          $___        ___%
+**2. Income Statement (Statement of Activities)** → \`income_statement.csv\`
 
-EXPENSES
-  Program Services         $___          $___          $___        ___%
-  Management & General     $___          $___          $___        ___%
-  Fundraising              $___          $___          $___        ___%
-TOTAL EXPENSES             $___          $___          $___        ___%
+Columns: Section, Category, ${period}, ${comparison || 'Budget'}, Variance, Variance %
+Rows: Revenue line items (Grants & Contributions, Government Contracts, Earned Revenue, In-Kind, Other Income, TOTAL REVENUE), then Expense line items (Program Services, Management & General, Fundraising, TOTAL EXPENSES), then NET SURPLUS/(DEFICIT).
 
-NET SURPLUS/(DEFICIT)      $___          $___          $___        ___%
-\`\`\`
+**3. Fund Balances** → \`fund_balances.csv\`
 
-**3. Fund Balances**
-For each fund, show: opening balance, inflows, outflows, closing balance.
-Flag restricted funds approaching their spend-down deadline.
+Columns: Fund Name, Restriction Type, Opening Balance, Inflows, Outflows, Closing Balance, Spend-Down Deadline, Status
+Flag restricted funds approaching their spend-down deadline with Status = "AT RISK".
 
-**4. Budget vs. Actual by Program Phase**
-Use phase budget data to show each program's burn rate:
-- Foundations: budget $X, spent $Y, remaining $Z (XX% through budget, XX% through year)
-- 101: ...
-- Lightspeed: ...
-- LiftOff: ...
+**4. Budget vs. Actual by Program Phase** → \`budget_vs_actual_by_phase.csv\`
 
-Flag any phase that is significantly over or under budget.
+Columns: Phase, Budget, Actual Spent, Remaining, Budget Burn %, Year Elapsed %, Variance Flag
+Include Foundations, 101, Lightspeed, LiftOff, and a TOTAL row. Variance Flag = "OVER" or "UNDER" for >10% variance.
 
-**5. Cash Position**
-Current cash, accounts receivable (expected grants), upcoming obligations.
+**5. Cash Position** → include as rows in \`key_metrics.csv\`
 
-**6. Key Metrics**
-- Cost per student (total expenses / total enrolled)
-- Cost per student by phase
-- Revenue per student
-- Program expense ratio (program expenses / total expenses) — nonprofits target >80%
+**6. Key Metrics** → \`key_metrics.csv\`
 
-**7. Action Items**
+Columns: Metric, Value, Benchmark, Status
+Rows: Cost Per Student (total), Cost Per Student by phase (one row each), Revenue Per Student, Program Expense Ratio (target >80%), Cash On Hand, Months of Runway, Accounts Receivable.
+
+**7. Action Items** → include in \`flags.csv\`
+
 Flag items requiring attention: overdue receivables, funds running low, budget variances >10%.`;
 }
 
@@ -257,47 +277,23 @@ High-level income statement and balance sheet data for ${period}.
 
 Auditors need revenue classified three ways. Produce each:
 
-**View A: By Fund (restriction)**
-\`\`\`
-Fund                    | Revenue    | Expenses   | Net        | Restriction Status
-Unrestricted/General    | $___       | $___       | $___       | None
-[Grant Fund 1]          | $___       | $___       | $___       | Temporarily restricted — expires [date]
-[Grant Fund 2]          | $___       | $___       | $___       | Temporarily restricted — expires [date]
-...
-TOTAL                   | $___       | $___       | $___       |
-\`\`\`
+**View A: By Fund (restriction)** → \`revenue_by_fund.csv\`
 
-**View B: By Funder**
-\`\`\`
-Funder                  | Awarded    | Received   | Spent      | Remaining  | Report Due
-[Funder 1]              | $___       | $___       | $___       | $___       | [date]
-[Funder 2]              | $___       | $___       | $___       | $___       | [date]
-Individual Donors       | $___       | $___       | N/A        | N/A        | N/A
-...
-TOTAL                   | $___       | $___       | $___       | $___       |
-\`\`\`
+Columns: Fund, Revenue, Expenses, Net, Restriction Type, Restriction Status, Expiration Date
 
-**View C: By Function (GAAP functional expense allocation)**
-\`\`\`
-Expense Category        | Program    | Mgmt & General | Fundraising | Total
-Salaries & Benefits     | $___       | $___           | $___        | $___
-Professional Services   | $___       | $___           | $___        | $___
-Occupancy               | $___       | $___           | $___        | $___
-Technology              | $___       | $___           | $___        | $___
-Stipends                | $___       | $___           | $___        | $___
-Travel                  | $___       | $___           | $___        | $___
-Other                   | $___       | $___           | $___        | $___
-TOTAL                   | $___       | $___           | $___        | $___
-\`\`\`
+**View B: By Funder** → \`revenue_by_funder.csv\`
 
-**3. Restricted Fund Tracking**
-For each restricted fund:
-- Original award amount and date
-- Cumulative spend to date
-- Remaining balance
-- Restriction terms (what it can be spent on)
-- Expiration date
-- Status: on track / at risk / expired
+Columns: Funder, Awarded, Received, Spent, Remaining, Report Due Date
+
+**View C: By Function (GAAP functional expense allocation)** → \`functional_expenses.csv\`
+
+Columns: Expense Category, Program, Management & General, Fundraising, Total
+Rows: Salaries & Benefits, Professional Services, Occupancy, Technology, Stipends, Travel, Other, TOTAL
+
+**3. Restricted Fund Tracking** → \`restricted_funds.csv\`
+
+Columns: Fund Name, Original Award, Award Date, Cumulative Spend, Remaining Balance, Restriction Terms, Expiration Date, Status
+Status values: On Track, At Risk, Expired
 
 **4. Grant Compliance Checklist**
 For each active grant:
@@ -308,17 +304,14 @@ For each active grant:
 - [ ] Match/leverage requirements met (if applicable)
 - [ ] \`[DATA UNAVAILABLE]\` for any items that can't be verified from the data
 
-**5. Transaction Volume Summary**
-- Total transactions for the period
-- Largest 10 transactions (amount, date, vendor/source, fund)
-- Stipend disbursement summary (Rapid + PEX totals)
+**5. Transaction Volume Summary** → \`large_transactions.csv\`
 
-**6. Reconciliation Flags**
-List every discrepancy found between data sources:
-\`\`\`
-Source A              | Source B              | Field           | Source A Value | Source B Value | Variance
-[Aplos]              | [Finance Sheet]       | [field]         | $___           | $___           | $___
-\`\`\`
+Columns: Rank, Date, Amount, Vendor/Source, Fund, Description
+Include the 10 largest transactions. Add a summary row at the top for total transaction count and total stipend disbursements.
+
+**6. Reconciliation Flags** → \`reconciliation_flags.csv\`
+
+Columns: Source A, Source B, Field, Source A Value, Source B Value, Variance, Likely Cause, Recommended Action
 
 **7. Missing Documentation Checklist**
 List anything the auditors will ask for that isn't in the data:
@@ -342,27 +335,15 @@ If you haven't already:
 
 ### Report Structure:
 
-**1. Grant Summary**
-\`\`\`
-Funder:          ${funder}
-Grant Period:    [from data or DATA UNAVAILABLE]
-Award Amount:    $___
-Amount Received: $___
-Amount Spent:    $___
-Remaining:       $___
-\`\`\`
+**1. Grant Summary** → \`grant_summary.csv\`
 
-**2. Budget vs. Actual**
-Map spending against the original grant budget categories:
-\`\`\`
-Budget Category         | Budgeted   | Actual     | Variance   | Var %    | Notes
-[Category 1]            | $___       | $___       | $___       | ___%     |
-[Category 2]            | $___       | $___       | $___       | ___%     |
-...
-TOTAL                   | $___       | $___       | $___       | ___%     |
-\`\`\`
+Columns: Field, Value
+Rows: Funder, Grant Period, Award Amount, Amount Received, Amount Spent, Remaining
 
-If the original budget categories are not in the data, use standard categories and flag: \`[BUDGET CATEGORIES: original grant budget not found in data — using standard categories. Verify against award letter.]\`
+**2. Budget vs. Actual** → \`grant_budget_vs_actual.csv\`
+
+Columns: Budget Category, Budgeted, Actual, Variance, Variance %, Notes
+Include a TOTAL row. If the original budget categories are not in the data, use standard categories and add a row: "NOTE","Original grant budget categories not found in data — using standard categories. Verify against award letter."
 
 **3. Program Outcomes Delivered**
 Pull outcomes data to show what this funding achieved:
@@ -394,25 +375,11 @@ Board members need a clear, concise financial picture — not an accounting dump
 
 ### Report Structure:
 
-**1. Financial Health Dashboard** (1-page summary)
+**1. Financial Health Dashboard** → \`financial_snapshot.csv\`
 
-\`\`\`
-FINANCIAL SNAPSHOT — ${period}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Revenue:     $___  (${comparison ? `vs. $__ ${comparison}` : 'budget: $__'})  [arrow up/down/flat]
-Expenses:    $___  (${comparison ? `vs. $__ ${comparison}` : 'budget: $__'})  [arrow up/down/flat]
-Net:         $___
-
-Cash on Hand:     $___
-Months of Runway: ___
-
-Program Expense Ratio: ___%  (target: >80%)
-Fundraising Efficiency: $__ raised per $1 spent on fundraising
-
-Active Grants:    ___  (total committed: $___)
-Donor Count:      ___  (${comparison ? `vs. __ ${comparison}` : ''})
-\`\`\`
+Columns: Metric, Current Value, ${comparison || 'Budget'}, Trend
+Rows: Revenue, Expenses, Net, Cash On Hand, Months of Runway, Program Expense Ratio (target >80%), Fundraising Efficiency, Active Grants (count), Active Grants (total committed), Donor Count.
+Trend column: Up / Down / Flat.
 
 **2. Revenue Story** (2-3 paragraphs)
 Where money came from. Trends. Any notable gifts or grants. Pipeline outlook. Written in plain language, not accounting jargon.
@@ -420,15 +387,10 @@ Where money came from. Trends. Any notable gifts or grants. Pipeline outlook. Wr
 **3. Expense Story** (2-3 paragraphs)
 Where money went. Program costs by phase. Any significant variances from budget and why. Staffing costs if significant.
 
-**4. Program Investment Summary**
-\`\`\`
-Program Phase    | Enrolled | Cost     | Cost/Student | Key Outcome
-Foundations      | ___      | $___     | $___         | [top metric]
-101              | ___      | $___     | $___         | [top metric]
-Lightspeed       | ___      | $___     | $___         | [top metric]
-LiftOff          | ___      | $___     | $___         | [top metric]
-TOTAL            | ___      | $___     | $___         |
-\`\`\`
+**4. Program Investment Summary** → \`program_investment.csv\`
+
+Columns: Program Phase, Enrolled, Cost, Cost Per Student, Key Outcome Metric, Outcome Value
+Rows: Foundations, 101, Lightspeed, LiftOff, TOTAL.
 
 **5. Fundraising Pipeline**
 - Grants pending: $__ across __ applications
@@ -467,15 +429,10 @@ Pull every financial data source available:
 
 ### Reconciliation Report:
 
-**1. Balance Comparison**
-\`\`\`
-Fund: ${fund}
-                    | Finance Sheet | Aplos     | Dev CRM   | Variance
-Opening Balance     | $___          | $___      | $___      | $___
-+ Revenue/Inflows   | $___          | $___      | $___      | $___
-- Expenses/Outflows | $___          | $___      | $___      | $___
-= Closing Balance   | $___          | $___      | $___      | $___
-\`\`\`
+**1. Balance Comparison** → \`balance_comparison.csv\`
+
+Columns: Line Item, Finance Sheet, Aplos, Dev CRM, Variance
+Rows: Opening Balance, + Revenue/Inflows, - Expenses/Outflows, = Closing Balance
 
 **2. Variance Analysis**
 For each discrepancy:
@@ -493,13 +450,9 @@ ${fundName ? `For ${fundName}:` : 'For each restricted fund:'}
 - Deadline for spend-down
 - Risk level: Green (on track) / Yellow (needs attention) / Red (at risk of return)
 
-**4. Recommended Journal Entries**
-If reconciliation reveals needed adjustments:
-\`\`\`
-Date        | Account          | Debit    | Credit   | Memo
-[date]      | [account]        | $___     |          | [explanation]
-[date]      | [account]        |          | $___     | [explanation]
-\`\`\`
+**4. Recommended Journal Entries** → \`recommended_journal_entries.csv\`
+
+Columns: Date, Account, Debit, Credit, Memo
 
 **5. Open Items**
 List everything that needs human follow-up to resolve.`;
