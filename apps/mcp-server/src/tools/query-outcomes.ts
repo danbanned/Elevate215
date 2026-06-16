@@ -22,7 +22,7 @@ const inputSchema = {
 };
 
 export function registerQueryOutcomes(server: McpServer): void {
-  server.registerTool(NAME, { description: DESCRIPTION, inputSchema, annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false } }, (input) =>
+  server.registerTool(NAME, { description: DESCRIPTION, inputSchema, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }, (input) =>
     runTool(NAME, input, async () => {
       const raw = input as Record<string, unknown>;
       const studentName = parseStr(raw, 'student_name') ?? '';

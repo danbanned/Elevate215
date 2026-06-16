@@ -13,6 +13,7 @@ import { authorizationServerMetadata, protectedResourceMetadata } from './oauth/
 import { registerClient } from './oauth/dcr.js';
 import { handleAuthorize, handleGoogleCallback, handleToken } from './oauth/flow.js';
 import { setCurrentCaller } from './tool-helpers.js';
+import { oauthRegisterLimiter, oauthFlowLimiter, mcpLimiter, getClientIp } from './rate-limit.js';
 
 const env = await loadEnv();
 if (env.SENTRY_DSN_MCP) {
@@ -135,10 +136,8 @@ const httpServer = createServer((req, res) => {
           await prisma.$queryRaw`SELECT 1`;
           sendJson(res, 200, { status: 'ok', ts: new Date().toISOString() });
         } catch (err) {
-          sendJson(res, 503, {
-            status: 'error',
-            error: err instanceof Error ? err.message : String(err),
-          });
+          process.stderr.write(`health check failed: ${err instanceof Error ? err.message : String(err)}\n`);
+          sendJson(res, 503, { status: 'error', error: 'database unavailable' });
         }
         return;
       }
@@ -159,6 +158,11 @@ const httpServer = createServer((req, res) => {
 
       // ----- Dynamic Client Registration -----
       if (path === '/oauth/register' && req.method === 'POST') {
+        const ip = getClientIp(req);
+        if (!oauthRegisterLimiter.check(ip)) {
+          sendJson(res, 429, { error: 'rate_limit_exceeded', error_description: 'Too many registration requests' });
+          return;
+        }
         try {
           const body = (await readBody(req)) as Record<string, unknown>;
           const out = await registerClient({
@@ -167,9 +171,11 @@ const httpServer = createServer((req, res) => {
           });
           sendJson(res, 201, out);
         } catch (err) {
+          const msg = err instanceof Error ? err.message : 'bad registration';
+          process.stderr.write(`DCR error: ${msg}\n`);
           sendJson(res, 400, {
             error: 'invalid_client_metadata',
-            error_description: err instanceof Error ? err.message : 'bad registration',
+            error_description: msg.startsWith('invalid_redirect_uri') ? msg : 'registration failed',
           });
         }
         return;
@@ -177,6 +183,11 @@ const httpServer = createServer((req, res) => {
 
       // ----- Authorize (browser arrives here) -----
       if (path === '/oauth/authorize' && req.method === 'GET') {
+        const ip = getClientIp(req);
+        if (!oauthFlowLimiter.check(ip)) {
+          sendJson(res, 429, { error: 'rate_limit_exceeded' });
+          return;
+        }
         const result = await handleAuthorize(url.searchParams);
         if (result.status === 302) {
           sendRedirect(res, result.redirect);
@@ -201,6 +212,11 @@ const httpServer = createServer((req, res) => {
 
       // ----- Token exchange -----
       if (path === '/oauth/token' && req.method === 'POST') {
+        const ip = getClientIp(req);
+        if (!oauthFlowLimiter.check(ip)) {
+          sendJson(res, 429, { error: 'rate_limit_exceeded' });
+          return;
+        }
         const body = await readFormBody(req);
         const result = await handleToken(body);
         sendJson(res, result.status, result.json);
@@ -212,6 +228,11 @@ const httpServer = createServer((req, res) => {
         const identity = await authenticateBearer(req.headers['authorization'] as string | undefined);
         if (!identity) {
           sendJson(res, 401, { error: 'unauthorized' });
+          return;
+        }
+        const rateLimitKey = identity.kind === 'user' ? identity.email : `_service:${getClientIp(req)}`;
+        if (!mcpLimiter.check(rateLimitKey)) {
+          sendJson(res, 429, { error: 'rate_limit_exceeded', error_description: 'Too many tool calls' });
           return;
         }
         const lookup = transportForRequest(req);
@@ -248,10 +269,9 @@ const httpServer = createServer((req, res) => {
 
       sendJson(res, 404, { error: 'not_found' });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      process.stderr.write(`http error: ${message}\n`);
+      process.stderr.write(`http error: ${err instanceof Error ? err.message : String(err)}\n`);
       try {
-        sendJson(res, 500, { error: 'internal_error', message });
+        sendJson(res, 500, { error: 'internal_error' });
       } catch {
         // headers already sent
       }

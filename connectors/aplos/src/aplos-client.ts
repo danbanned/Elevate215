@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { loadEnv } from '@lp-ai/lib-config';
 
 const BASE_URL = 'https://app.aplos.com';
 const AUTH_PATH_PREFIX = '/hermes/api/v1/auth/';
@@ -6,8 +7,9 @@ const USER_AGENT = 'LaunchpadInternalAI/1.0';
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
 
-function loadPrivateKey(): crypto.KeyObject {
-  const apiKey = process.env['APLOS_API_KEY'];
+async function loadPrivateKey(): Promise<crypto.KeyObject> {
+  const env = await loadEnv();
+  const apiKey = env.APLOS_API_KEY;
   if (!apiKey) throw new Error('APLOS_API_KEY not set');
   const pem = '-----BEGIN PRIVATE KEY-----\n' + apiKey.match(/.{1,64}/g)!.join('\n') + '\n-----END PRIVATE KEY-----\n';
   return crypto.createPrivateKey({ key: pem, format: 'pem' });
@@ -17,7 +19,8 @@ export async function getAccessToken(): Promise<string> {
   if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) {
     return cachedToken.value;
   }
-  const clientId = process.env['APLOS_CLIENT_ID'];
+  const env = await loadEnv();
+  const clientId = env.APLOS_CLIENT_ID;
   if (!clientId) throw new Error('APLOS_CLIENT_ID not set');
 
   const r = await fetch(BASE_URL + AUTH_PATH_PREFIX + clientId, {
@@ -29,7 +32,7 @@ export async function getAccessToken(): Promise<string> {
   const payload = (await r.json()) as { data: { token: string; expires: string } };
   const encrypted = Buffer.from(payload.data.token, 'base64');
   const decrypted = crypto.privateDecrypt(
-    { key: loadPrivateKey(), padding: crypto.constants.RSA_PKCS1_PADDING },
+    { key: await loadPrivateKey(), padding: crypto.constants.RSA_PKCS1_PADDING },
     encrypted,
   ).toString();
 

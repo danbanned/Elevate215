@@ -7,14 +7,48 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
+import { loadEnv } from '@lp-ai/lib-config';
 import { getAssumedCredentials } from '../sts-helper.js';
 import { runTool } from '../tool-helpers.js';
 import { toolError } from '../errors.js';
 
 const execAsync = promisify(exec);
 
+const env = await loadEnv();
+
 // Check if we should use mock terraform
-const MOCK_TERRAFORM = process.env['MOCK_TERRAFORM'] !== 'false';
+const MOCK_TERRAFORM = env.MOCK_TERRAFORM !== 'false';
+
+// Allowed Terraform providers. Blocks arbitrary provider execution.
+const ALLOWED_PROVIDERS = new Set(['hashicorp/aws', 'hashicorp/random', 'hashicorp/null', 'hashicorp/local']);
+
+// Patterns that indicate dangerous Terraform configurations
+const DANGEROUS_PATTERNS = [
+  /\bprovisioner\s+"(local-exec|remote-exec)"/i,  // arbitrary command execution
+  /\bbackend\s+"(?!s3)[^"]+"/i,                    // non-S3 backends could exfiltrate state
+  /\bexternal\b/i,                                  // external data source runs arbitrary commands
+];
+
+function validateTerraformCode(code: string): string | null {
+  // Check for dangerous patterns
+  for (const pattern of DANGEROUS_PATTERNS) {
+    if (pattern.test(code)) {
+      return `Terraform code contains disallowed pattern: ${pattern.source}`;
+    }
+  }
+
+  // Validate provider sources if specified
+  const providerSourceRegex = /source\s*=\s*"([^"]+)"/g;
+  let match;
+  while ((match = providerSourceRegex.exec(code)) !== null) {
+    const source = match[1];
+    if (source && !ALLOWED_PROVIDERS.has(source)) {
+      return `Disallowed provider source: ${source}. Allowed: ${[...ALLOWED_PROVIDERS].join(', ')}`;
+    }
+  }
+
+  return null; // valid
+}
 
 async function isTerraformInstalled(): Promise<boolean> {
   try {
@@ -125,6 +159,12 @@ export function registerAwsTools(server: McpServer): void {
           actionType: 'CREATE' | 'UPDATE' | 'DELETE';
         };
 
+        // Validate Terraform code before writing to disk
+        const validationError = validateTerraformCode(terraformCode);
+        if (validationError) {
+          return toolError('validation_error', validationError);
+        }
+
         const jobId = randomUUID();
         const sandboxDir = path.resolve(`./.tf-sandboxes/${jobId}`);
         await fs.promises.mkdir(sandboxDir, { recursive: true });
@@ -164,8 +204,8 @@ export function registerAwsTools(server: McpServer): void {
         }
 
         // Determine initial status based on safety governance rules
-        const isProduction = process.env['AWS_ENV'] === 'production' || process.env['NODE_ENV'] === 'production';
-        const autoApplyDev = process.env['AUTO_APPLY_DEV'] === 'true';
+        const isProduction = env.AWS_ENV === 'production' || env.NODE_ENV === 'production';
+        const autoApplyDev = env.AUTO_APPLY_DEV === 'true';
 
         let status = 'PENDING_APPROVAL';
         if (!isProduction && !isDestructive && autoApplyDev) {

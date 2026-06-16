@@ -1,0 +1,321 @@
+name: Deploy
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      services:
+        description: "Services to deploy (comma-separated, or 'all')"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - mcp-server
+          - hq
+          - aws-mcp-server
+          - sync
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: "851725317896"
+  ECS_CLUSTER: lp-internal
+
+jobs:
+  # ─── Gate: only deploy after CI passes ───────────────────────────
+  ci:
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/ci.yml
+
+  # ─── Detect which services changed ──────────────────────────────
+  changes:
+    runs-on: ubuntu-latest
+    if: always() && (github.event_name == 'workflow_dispatch' || needs.ci.result == 'success')
+    needs: [ci]
+    outputs:
+      mcp-server: ${{ steps.detect.outputs.mcp-server }}
+      hq: ${{ steps.detect.outputs.hq }}
+      aws-mcp-server: ${{ steps.detect.outputs.aws-mcp-server }}
+      sync: ${{ steps.detect.outputs.sync }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed services
+        id: detect
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            INPUT="${{ github.event.inputs.services }}"
+            if [[ "$INPUT" == "all" ]]; then
+              echo "mcp-server=true" >> "$GITHUB_OUTPUT"
+              echo "hq=true" >> "$GITHUB_OUTPUT"
+              echo "aws-mcp-server=true" >> "$GITHUB_OUTPUT"
+              echo "sync=true" >> "$GITHUB_OUTPUT"
+            else
+              for svc in $(echo "$INPUT" | tr ',' ' '); do
+                echo "${svc}=true" >> "$GITHUB_OUTPUT"
+              done
+            fi
+            exit 0
+          fi
+
+          CHANGED=$(git diff --name-only HEAD~1 HEAD)
+
+          # Shared packages trigger all services
+          SHARED=false
+          if echo "$CHANGED" | grep -qE '^packages/'; then
+            SHARED=true
+          fi
+
+          if [[ "$SHARED" == "true" ]] || echo "$CHANGED" | grep -qE '^apps/mcp-server/'; then
+            echo "mcp-server=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [[ "$SHARED" == "true" ]] || echo "$CHANGED" | grep -qE '^apps/hq/'; then
+            echo "hq=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [[ "$SHARED" == "true" ]] || echo "$CHANGED" | grep -qE '^apps/aws-mcp-server/'; then
+            echo "aws-mcp-server=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [[ "$SHARED" == "true" ]] || echo "$CHANGED" | grep -qE '^(apps/sync/|connectors/)'; then
+            echo "sync=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ─── Deploy MCP Server ─────────────────────────────────────────
+  deploy-mcp-server:
+    needs: [changes]
+    if: needs.changes.outputs.mcp-server == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/lp-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/mcp-server/Dockerfile
+          push: true
+          platforms: linux/arm64
+          tags: |
+            ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lp-internal/mcp-server:latest
+            ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lp-internal/mcp-server:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Register task definition
+        id: taskdef
+        run: |
+          sed "s/\${AWS_ACCOUNT_ID}/${{ env.AWS_ACCOUNT_ID }}/g" \
+            infra/ecs/mcp-server-taskdef.json > /tmp/taskdef.json
+
+          # Pin image to this exact SHA instead of :latest
+          jq --arg img "${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lp-internal/mcp-server:${{ github.sha }}" \
+            '.containerDefinitions[0].image = $img' /tmp/taskdef.json > /tmp/taskdef-final.json
+
+          ARN=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/taskdef-final.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+          echo "arn=$ARN" >> "$GITHUB_OUTPUT"
+          echo "Registered: $ARN"
+
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service lp-internal-mcp-server \
+            --task-definition ${{ steps.taskdef.outputs.arn }} \
+            --force-new-deployment
+
+      - name: Wait for stability
+        run: |
+          echo "Waiting for service to stabilize (up to 5 minutes)..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services lp-internal-mcp-server
+
+  # ─── Deploy HQ Dashboard ───────────────────────────────────────
+  deploy-hq:
+    needs: [changes]
+    if: needs.changes.outputs.hq == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/lp-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/hq/Dockerfile
+          push: true
+          platforms: linux/arm64
+          tags: |
+            ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lp-internal/hq:latest
+            ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lp-internal/hq:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Register task definition
+        id: taskdef
+        run: |
+          sed "s/\${AWS_ACCOUNT_ID}/${{ env.AWS_ACCOUNT_ID }}/g" \
+            infra/ecs/hq-taskdef.json > /tmp/taskdef.json
+
+          jq --arg img "${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lp-internal/hq:${{ github.sha }}" \
+            '.containerDefinitions[0].image = $img' /tmp/taskdef.json > /tmp/taskdef-final.json
+
+          ARN=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/taskdef-final.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+          echo "arn=$ARN" >> "$GITHUB_OUTPUT"
+          echo "Registered: $ARN"
+
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service lp-internal-hq \
+            --task-definition ${{ steps.taskdef.outputs.arn }} \
+            --force-new-deployment
+
+      - name: Wait for stability
+        run: |
+          echo "Waiting for service to stabilize (up to 5 minutes)..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services lp-internal-hq
+
+  # ─── Deploy AWS MCP Server ─────────────────────────────────────
+  deploy-aws-mcp-server:
+    needs: [changes]
+    if: needs.changes.outputs.aws-mcp-server == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/lp-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/aws-mcp-server/Dockerfile
+          push: true
+          platforms: linux/arm64
+          tags: |
+            ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lp-internal/aws-mcp-server:latest
+            ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lp-internal/aws-mcp-server:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Register task definition
+        id: taskdef
+        run: |
+          sed "s/\${AWS_ACCOUNT_ID}/${{ env.AWS_ACCOUNT_ID }}/g" \
+            infra/ecs/aws-mcp-server-taskdef.json > /tmp/taskdef.json
+
+          jq --arg img "${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lp-internal/aws-mcp-server:${{ github.sha }}" \
+            '.containerDefinitions[0].image = $img' /tmp/taskdef.json > /tmp/taskdef-final.json
+
+          ARN=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/taskdef-final.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+          echo "arn=$ARN" >> "$GITHUB_OUTPUT"
+          echo "Registered: $ARN"
+
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service lp-internal-aws-mcp-server \
+            --task-definition ${{ steps.taskdef.outputs.arn }} \
+            --force-new-deployment
+
+      - name: Wait for stability
+        run: |
+          echo "Waiting for service to stabilize (up to 5 minutes)..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services lp-internal-aws-mcp-server
+
+  # ─── Build Sync Image (no long-running service — used by EventBridge tasks) ─
+  deploy-sync:
+    needs: [changes]
+    if: needs.changes.outputs.sync == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/lp-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/sync/Dockerfile
+          push: true
+          platforms: linux/arm64
+          tags: |
+            ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lp-internal/sync:latest
+            ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lp-internal/sync:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

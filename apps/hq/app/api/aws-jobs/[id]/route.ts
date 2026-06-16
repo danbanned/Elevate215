@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@lp-ai/lib-db';
+import { auth } from '../../../../auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,16 +20,23 @@ export async function GET(request: Request, { params }: RouteParams): Promise<Ne
       return NextResponse.json({ error: 'Job not found' }, { status: 404 });
     }
     return NextResponse.json(job);
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err) {
+    process.stderr.write(`GET /api/aws-jobs/${id} error: ${err instanceof Error ? err.message : String(err)}\n`);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
 export async function POST(request: Request, { params }: RouteParams): Promise<NextResponse> {
   const { id } = await params;
   try {
+    const session = await auth();
+    const approverEmail = session?.user?.email;
+    if (!approverEmail) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json().catch(() => ({}));
-    const { action, approver } = body as { action?: string; approver?: string };
+    const { action } = body as { action?: string };
 
     if (!action || !['approve', 'reject'].includes(action)) {
       return NextResponse.json({ error: 'Invalid action. Must be approve or reject' }, { status: 400 });
@@ -47,7 +55,7 @@ export async function POST(request: Request, { params }: RouteParams): Promise<N
       where: { id },
       data: {
         status: newStatus,
-        approver: approver ?? 'admin@launchpadphilly.org',
+        approver: approverEmail,
       },
     });
 
@@ -61,12 +69,13 @@ export async function POST(request: Request, { params }: RouteParams): Promise<N
         developer: job.developer,
         resourceType: job.resourceType,
         actionType: job.actionType,
-        approver: updatedJob.approver,
+        approver: approverEmail,
       }) + '\n'
     );
 
     return NextResponse.json(updatedJob);
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err) {
+    process.stderr.write(`POST /api/aws-jobs/${id} error: ${err instanceof Error ? err.message : String(err)}\n`);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

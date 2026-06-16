@@ -66,9 +66,17 @@ export const envSchema = z.object({
   SENTRY_PROJECT_HQ: optional,
   SENTRY_PROJECT_MCP: optional,
 
-  SYNC_SECRET: optional,
+  SYNC_SECRET: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z.string().trim().min(32, 'SYNC_SECRET must be at least 32 characters').optional(),
+  ),
 
   // MCP OAuth (Phase 23). Active on the MCP servers in production; ignored locally.
+  // AWS MCP server runtime flags
+  MOCK_TERRAFORM: optional,   // 'false' to use real terraform; default mock
+  AWS_ENV: optional,          // 'production' enables governance gates
+  AUTO_APPLY_DEV: optional,   // 'true' auto-approves non-destructive dev changes
+
   MCP_OAUTH_ISSUER: optional, // e.g. https://mcp.launchpadinc.org
   MCP_PUBLIC_URL: optional, // resource URL advertised in /.well-known/oauth-protected-resource
   AWS_MCP_PUBLIC_URL: optional, // resource URL for the AWS MCP server
