@@ -12,6 +12,28 @@ export function setCurrentCaller(caller: CallerIdentity | null): void {
   currentCaller = caller;
 }
 
+// Tools that service callers (SYNC_SECRET) are allowed to invoke.
+// This scopes the blast radius if the secret leaks — skill tools and
+// write-capable tools are excluded.
+const SERVICE_ALLOWED_TOOLS = new Set([
+  'get_student_info',
+  'query_students',
+  'query_outcomes',
+  'query_enrollment',
+  'query_certifications',
+  'query_competency',
+  'query_finances',
+  'query_donors',
+  'query_attendance',
+  'query_employment',
+  'query_postsecondary',
+  'search_conversations',
+  'search_by_person',
+  'get_entity_brief',
+  'get_finance_brief',
+  'search_documents',
+]);
+
 export async function runTool(
   toolName: string,
   input: unknown,
@@ -22,7 +44,26 @@ export async function runTool(
   let output: unknown;
   let errorMessage: string | undefined;
 
-  // Per-tool ACL (Phase 23). Service callers (EventBridge etc.) bypass.
+  // Per-tool ACL — service callers are scoped to data-query tools only.
+  if (caller && caller.kind === 'service' && !SERVICE_ALLOWED_TOOLS.has(toolName)) {
+    const denied = permissionDeniedError(toolName);
+    errorMessage = denied.message;
+    output = { error: denied };
+    const durationMs = Date.now() - start;
+    void logUsage({
+      toolName,
+      input,
+      output,
+      durationMs,
+      error: errorMessage,
+      callerEmail: '_service',
+    });
+    return {
+      content: [{ type: 'text', text: JSON.stringify(output) }],
+      isError: true,
+    };
+  }
+
   if (caller && caller.kind === 'user' && !(await canCallTool(toolName, caller.roles))) {
     const denied = permissionDeniedError(toolName);
     errorMessage = denied.message;
@@ -45,7 +86,9 @@ export async function runTool(
   try {
     output = await handler();
   } catch (err) {
-    errorMessage = err instanceof Error ? err.message : String(err);
+    const rawMessage = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`tool error [${toolName}]: ${rawMessage}\n`);
+    errorMessage = sanitizeErrorMessage(rawMessage);
     output = {
       error: {
         code: 'internal_error',
@@ -67,6 +110,21 @@ export async function runTool(
   };
   if (errorMessage) result.isError = true;
   return result;
+}
+
+const SENSITIVE_PATTERNS = [
+  /postgresql:\/\/[^\s]+/gi,
+  /password[=:]\s*\S+/gi,
+  /Bearer\s+\S+/gi,
+  /sk-[a-zA-Z0-9]+/g,
+];
+
+function sanitizeErrorMessage(message: string): string {
+  let sanitized = message;
+  for (const pattern of SENSITIVE_PATTERNS) {
+    sanitized = sanitized.replace(pattern, '[REDACTED]');
+  }
+  return sanitized;
 }
 
 export function parseStr(raw: Record<string, unknown>, key: string): string | undefined {

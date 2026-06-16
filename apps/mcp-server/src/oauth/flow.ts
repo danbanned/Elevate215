@@ -219,15 +219,17 @@ async function tokenAuthorizationCode(body: URLSearchParams): Promise<{
   if (!row) return fail('unknown code');
   if (row.usedAt) return fail('code already used');
   if (row.expiresAt.getTime() < Date.now()) return fail('code expired');
-  if (row.clientId !== clientId) return fail(`client_id mismatch: expected ${row.clientId}, got ${clientId}`);
-  if (row.redirectUri !== redirectUri) return fail(`redirect_uri mismatch: expected ${row.redirectUri}, got ${redirectUri}`);
+  if (row.clientId !== clientId) return fail('client_id mismatch');
+  if (row.redirectUri !== redirectUri) return fail('redirect_uri mismatch');
   if (!verifyPkce(codeVerifier, row.codeChallenge)) return fail('PKCE check failed');
 
-  // Mark code as used (single-use). Issue tokens.
-  await prisma.oAuthAuthorizationCode.update({
-    where: { code },
+  // Atomically mark as used — prevents race condition where two requests
+  // exchange the same code concurrently.
+  const updated = await prisma.oAuthAuthorizationCode.updateMany({
+    where: { code, usedAt: null },
     data: { usedAt: new Date() },
   });
+  if (updated.count === 0) return fail('code already used');
 
   return await issueTokens(row.userEmail, row.clientId, row.scopes);
 }

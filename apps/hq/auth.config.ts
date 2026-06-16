@@ -14,7 +14,18 @@ export default {
   callbacks: {
     signIn({ profile }) {
       const email = profile?.email ?? '';
-      return email.endsWith(`@${ALLOWED_DOMAIN}`);
+      const allowed = email.endsWith(`@${ALLOWED_DOMAIN}`);
+      if (!allowed) {
+        process.stdout.write(
+          JSON.stringify({
+            timestamp: new Date().toISOString(),
+            event: 'auth_signin_rejected',
+            email,
+            reason: 'domain_not_allowed',
+          }) + '\n',
+        );
+      }
+      return allowed;
     },
   },
   pages: {

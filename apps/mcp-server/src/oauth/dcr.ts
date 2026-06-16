@@ -7,6 +7,15 @@
 import { prisma } from '@lp-ai/lib-db';
 import { randomUUID } from 'node:crypto';
 
+// Allowed redirect URI domains. Loopback is always allowed for development.
+// Extend this list as new OAuth clients are registered.
+const ALLOWED_REDIRECT_DOMAINS = new Set([
+  'claude.ai',
+  'console.anthropic.com',
+  'launchpadphilly.org',
+  'launchpadinc.org',
+]);
+
 export interface DcrRequest {
   client_name?: string | undefined;
   redirect_uris: string[];
@@ -40,7 +49,14 @@ export async function registerClient(req: DcrRequest): Promise<DcrResponse> {
       if (u.protocol !== 'https:' && !isLoopback) {
         throw new Error(`invalid_redirect_uri: ${uri} must be https`);
       }
-    } catch {
+      if (!isLoopback) {
+        const domain = u.hostname.split('.').slice(-2).join('.');
+        if (!ALLOWED_REDIRECT_DOMAINS.has(domain) && !ALLOWED_REDIRECT_DOMAINS.has(u.hostname)) {
+          throw new Error(`invalid_redirect_uri: domain ${u.hostname} is not allowed`);
+        }
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message.startsWith('invalid_redirect_uri')) throw e;
       throw new Error(`invalid_redirect_uri: ${uri}`);
     }
   }

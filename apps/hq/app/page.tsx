@@ -58,10 +58,22 @@ async function fetchFreshness(): Promise<SourceFreshness[]> {
   ];
 }
 
+const ALLOWED_TABLES = new Set([
+  'students', 'student_info', 'student_certifications', 'student_competencies',
+  'attendance_records', 'finance_snapshots', 'donor_contacts', 'document_chunks',
+  'student_phase_outcomes',
+]);
+const ALLOWED_COLUMNS = new Set([
+  'updated_at', 'synced_at', 'last_synced_at',
+]);
+
 async function latest(
   table: string,
   column: string,
 ): Promise<{ rowCount: number; lastSyncedAt: Date | null }> {
+  if (!ALLOWED_TABLES.has(table) || !ALLOWED_COLUMNS.has(column)) {
+    throw new Error(`Disallowed table/column: ${table}.${column}`);
+  }
   const rows = await prisma.$queryRawUnsafe<
     Array<{ count: bigint; last_at: Date | null }>
   >(
