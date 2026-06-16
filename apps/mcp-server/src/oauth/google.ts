@@ -94,6 +94,12 @@ export async function exchangeGoogleCode(code: string): Promise<GoogleIdentity> 
 
 export async function isAllowedDomain(email: string): Promise<boolean> {
   const env = await loadEnv();
-  const domain = env.AUTH_ALLOWED_DOMAIN ?? 'launchpadphilly.org';
-  return email.toLowerCase().endsWith(`@${domain.toLowerCase()}`);
+  const raw = env.AUTH_ALLOWED_DOMAIN ?? 'launchpadphilly.org';
+  // Comma-separated list of allowed domains. Single-value config still works.
+  const allowed = raw
+    .split(',')
+    .map((d) => d.trim().toLowerCase())
+    .filter(Boolean);
+  const lower = email.toLowerCase();
+  return allowed.some((d) => lower.endsWith(`@${d}`));
 }

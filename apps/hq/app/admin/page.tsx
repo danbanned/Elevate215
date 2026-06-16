@@ -1,7 +1,8 @@
 import { prisma } from '@lp-ai/lib-db';
 import { redirect } from 'next/navigation';
 import { auth } from '../../auth';
-import { promoteUser, disableUser, addUser } from './actions';
+import { promoteUser, disableUser, deleteUser, addUser } from './actions';
+import { DeleteUserButton } from './DeleteUserButton';
 import { ROLES } from './roles';
 import { PermissionsMatrix } from './PermissionsMatrix';
 
@@ -167,6 +168,7 @@ export default async function AdminPage() {
                         </button>
                       </form>
                     )}
+                    <DeleteUserButton email={u.email} action={deleteUser} />
                   </div>
                 </td>
               </tr>
