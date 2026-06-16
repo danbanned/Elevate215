@@ -411,7 +411,8 @@ Important: **Specific grant alignment** is separate from mission alignment. A he
 **Location:** [City, State]
 **Annual Giving:** [Total from 990 or website] [VERIFY if uncertain]
 **Typical Grant Size:** [Range]
-**Website:** [URL]
+**Foundation Website:** [direct URL to the funder's own website homepage — e.g., https://www.examplefoundation.org]
+**Grant/Application Page:** [direct URL to the specific grant program or application page on the funder's own site — e.g., https://www.examplefoundation.org/grants/workforce-development. If not found, state "[NOT FOUND — check foundation website]"]
 **Board Connection:** [connection details or "None identified"]
 
 **Why they match:**
@@ -432,8 +433,13 @@ Important: **Specific grant alignment** is separate from mission alignment. A he
 **Application details:**
 - Deadline: [date or "rolling" or "LOI required first" or VERIFY]
 - Process: [open application / invitation only / LOI first / RFP cycle]
-- URL: [direct link to application page if found]
+- Apply here: [direct link to the application/LOI submission page on the funder's own site]
 - Key deliverables: [what must be submitted — LOI, full proposal, budget, attachments]
+
+**Source citations:**
+- Foundation info: [URL where you found mission/focus area details — prefer funder's own site]
+- Grant details: [URL where you found the specific grant/application info]
+- 990 data: [URL to ProPublica or IRS filing if used]
 
 **Recommended approach:**
 [Specific next step — leverage connections if any, or cold application strategy]
@@ -510,11 +516,11 @@ Sorted by urgency:
 
 ### 7d. Summary Table
 
-| # | Funder | Fit | Type | Typical Size | Deadline | Geo Tier | Connection | Status |
-|---|---|---|---|---|---|---|---|---|
-| 1 | [Name] | Strong | Foundation | $25K-$50K | [date] | Local | Direct | URGENT — LOI due soon |
-| 2 | [Name] | Strong | Corporate | $10K-$25K | Rolling | National | None | Ready to apply |
-| ... | | | | | | | | |
+| # | Funder | Fit | Type | Size | Deadline | Geo | Connection | Foundation Site | Grant Page | Status |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | [Name] | Strong | Foundation | $25K-$50K | [date] | Local | Direct | [URL] | [URL] | URGENT — LOI due soon |
+| 2 | [Name] | Strong | Corporate | $10K-$25K | Rolling | National | None | [URL] | [URL] | Ready to apply |
+| ... | | | | | | | | | | |
 
 ---
 
@@ -524,9 +530,10 @@ Sorted by urgency:
 
 ## Important Notes
 
+- **ALWAYS cite the funder's own website.** For every prospect, you MUST provide a direct link to the foundation/funder's own website AND to the specific grant or application page on their site. Do NOT cite intermediary sources (Candid, GrantStation, blog posts, news articles) as the primary reference — those are research tools to find funders, but the prospect card must link to the funder's own site. If you cannot find the funder's website, flag it: \`[WEBSITE NOT FOUND — verify this funder exists]\`. If the grant page isn't on their site, flag it: \`[GRANT PAGE NOT FOUND — check foundation website]\`.
 - **Funder information may be outdated.** Every \`[VERIFY]\` flag means the user should check the funder's current website before acting.
 - **Quality over quantity.** 10 well-researched, strong-fit prospects are more valuable than 50 surface-level names.
-- **Use the org's real numbers in talking points.** All Launchpad data must come from Step 1 tool calls.
+- **Use the org's real numbers in talking points.** All organizational data must come from Step 1 tool calls.
 - **Connections are gold.** Any board/leadership connection to a funder should be flagged prominently — warm introductions dramatically improve success rates.
 - **Program specificity matters.** A funder whose mission broadly aligns is less valuable than one with a specific open grant that matches the exact funding need. The "Specific grant alignment" scoring dimension captures this.`;
 
