@@ -38,12 +38,21 @@
         "ecs:UpdateService",
         "ecs:DescribeServices",
         "ecs:ListTasks",
-        "ecs:DescribeTasks"
+        "ecs:DescribeTasks",
+        "ecs:RunTask"
       ],
       "Resource": [
         "arn:aws:ecs:us-east-1:851725317896:service/lp-internal/*",
         "arn:aws:ecs:us-east-1:851725317896:task/lp-internal/*"
       ]
+    },
+    {
+      "Sid": "MigrationLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:GetLogEvents"
+      ],
+      "Resource": "arn:aws:logs:us-east-1:851725317896:log-group:/ecs/lp-internal-*:*"
     },
     {
       "Sid": "PassExecutionRole",

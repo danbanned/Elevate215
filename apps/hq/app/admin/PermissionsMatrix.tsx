@@ -6,11 +6,12 @@ const CATEGORY_LABELS: Record<string, string> = {
   students: 'Students',
   donor_finance: 'Donors & Finance',
   search: 'Cross-cutting search',
+  skills: 'Skills',
   future: 'Future / not yet implemented',
   other: 'Other',
 };
 
-const CATEGORY_ORDER = ['students', 'donor_finance', 'search', 'future', 'other'];
+const CATEGORY_ORDER = ['students', 'donor_finance', 'search', 'skills', 'future', 'other'];
 
 interface ToolRow {
   toolName: string;
