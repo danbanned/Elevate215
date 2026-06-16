@@ -10,7 +10,7 @@ const DESCRIPTION =
   'pulls live program data, and drafts in the organization\'s voice — formatted for the ' +
   'specific submission method (email, web form, or document upload).';
 
-const argsSchema = {
+export const grantWritingArgsSchema = {
   task_type: z
     .enum(['proposal', 'report'])
     .describe('Whether to draft a new grant proposal or a funder performance report.'),
@@ -72,7 +72,7 @@ interface PromptArgs {
   additional_context?: string | undefined;
 }
 
-function buildPromptMessages(args: PromptArgs): GetPromptResult {
+export function buildGrantWritingMessages(args: PromptArgs): GetPromptResult {
   const isProposal = args.task_type === 'proposal';
   const hasUrl = !!args.grant_url?.trim();
   const hasPastedReqs = !!args.grant_requirements?.trim();
@@ -416,7 +416,7 @@ ${writingStep}`;
 }
 
 export function registerGrantWritingPrompt(server: McpServer): void {
-  server.registerPrompt(NAME, { description: DESCRIPTION, argsSchema }, (args) => {
-    return buildPromptMessages(args);
+  server.registerPrompt(NAME, { description: DESCRIPTION, argsSchema: grantWritingArgsSchema }, (args) => {
+    return buildGrantWritingMessages(args);
   });
 }

@@ -17,6 +17,9 @@ import { registerGetEntityBrief } from './tools/get-entity-brief.js';
 import { registerGetFinanceBrief } from './tools/get-finance-brief.js';
 import { registerSearchDocuments } from './tools/search-documents.js';
 
+import { registerSkillGrantWriting } from './tools/skill-grant-writing.js';
+import { registerSkillGrantProspecting } from './tools/skill-grant-prospecting.js';
+
 import { registerGrantWritingPrompt } from './prompts/grant-writing.js';
 import { registerGrantProspectingPrompt } from './prompts/grant-prospecting.js';
 
@@ -26,7 +29,7 @@ export function makeServer(): McpServer {
     version: '1.0.0',
   });
 
-  // Tools
+  // Data tools
   registerGetStudentInfo(server);
   registerQueryStudents(server);
   registerQueryOutcomes(server);
@@ -44,7 +47,11 @@ export function makeServer(): McpServer {
   registerGetFinanceBrief(server);
   registerSearchDocuments(server);
 
-  // Prompts (Skills)
+  // Skill tools (return structured instructions for Claude to follow)
+  registerSkillGrantWriting(server);
+  registerSkillGrantProspecting(server);
+
+  // Prompts (same skills, for clients that support MCP prompts)
   registerGrantWritingPrompt(server);
   registerGrantProspectingPrompt(server);
 

@@ -10,7 +10,7 @@ const DESCRIPTION =
   'searches funder databases and 990 filings, checks for LinkedIn/board connections, and produces ' +
   'a ranked prospect list with fit analysis, deadlines, and a prioritized action calendar.';
 
-const argsSchema = {
+export const grantProspectingArgsSchema = {
   funding_need: z
     .string()
     .describe(
@@ -105,7 +105,7 @@ interface PromptArgs {
   additional_context?: string | undefined;
 }
 
-function buildPromptMessages(args: PromptArgs): GetPromptResult {
+export function buildGrantProspectingMessages(args: PromptArgs): GetPromptResult {
   const grantSize = args.grant_size_range ?? 'not specified — include a range of sizes';
   const grantType = args.grant_type ?? 'any';
   const orgLocation = args.organization_location ?? 'Philadelphia, PA';
@@ -539,7 +539,7 @@ Sorted by urgency:
 }
 
 export function registerGrantProspectingPrompt(server: McpServer): void {
-  server.registerPrompt(NAME, { description: DESCRIPTION, argsSchema }, (args) => {
-    return buildPromptMessages(args);
+  server.registerPrompt(NAME, { description: DESCRIPTION, argsSchema: grantProspectingArgsSchema }, (args) => {
+    return buildGrantProspectingMessages(args);
   });
 }
