@@ -19,9 +19,11 @@ import { registerSearchDocuments } from './tools/search-documents.js';
 
 import { registerSkillGrantWriting } from './tools/skill-grant-writing.js';
 import { registerSkillGrantProspecting } from './tools/skill-grant-prospecting.js';
+import { registerSkillFinanceAudit } from './tools/skill-finance-audit.js';
 
 import { registerGrantWritingPrompt } from './prompts/grant-writing.js';
 import { registerGrantProspectingPrompt } from './prompts/grant-prospecting.js';
+import { registerFinanceAuditPrompt } from './prompts/finance-audit.js';
 
 export function makeServer(): McpServer {
   const server = new McpServer({
@@ -50,10 +52,12 @@ export function makeServer(): McpServer {
   // Skill tools (return structured instructions for Claude to follow)
   registerSkillGrantWriting(server);
   registerSkillGrantProspecting(server);
+  registerSkillFinanceAudit(server);
 
   // Prompts (same skills, for clients that support MCP prompts)
   registerGrantWritingPrompt(server);
   registerGrantProspectingPrompt(server);
+  registerFinanceAuditPrompt(server);
 
   return server;
 }
