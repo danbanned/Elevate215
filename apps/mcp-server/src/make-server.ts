@@ -17,12 +17,16 @@ import { registerGetEntityBrief } from './tools/get-entity-brief.js';
 import { registerGetFinanceBrief } from './tools/get-finance-brief.js';
 import { registerSearchDocuments } from './tools/search-documents.js';
 
+import { registerGrantWritingPrompt } from './prompts/grant-writing.js';
+import { registerGrantProspectingPrompt } from './prompts/grant-prospecting.js';
+
 export function makeServer(): McpServer {
   const server = new McpServer({
     name: 'lp-internal-ai',
     version: '1.0.0',
   });
 
+  // Tools
   registerGetStudentInfo(server);
   registerQueryStudents(server);
   registerQueryOutcomes(server);
@@ -39,6 +43,10 @@ export function makeServer(): McpServer {
   registerGetEntityBrief(server);
   registerGetFinanceBrief(server);
   registerSearchDocuments(server);
+
+  // Prompts (Skills)
+  registerGrantWritingPrompt(server);
+  registerGrantProspectingPrompt(server);
 
   return server;
 }
