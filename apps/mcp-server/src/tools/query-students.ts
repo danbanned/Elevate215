@@ -145,6 +145,8 @@ export function registerQueryStudents(server: McpServer): void {
           student_number: s.studentNumber,
           canonical_name: s.canonicalName,
           email: s.email,
+          launchpad_email: s.launchpadEmail,
+          alt_school_email: s.altSchoolEmail,
           current_phase: s.currentPhase,
           enrollment_status: s.enrollmentStatus,
           cohort: s.cohort,

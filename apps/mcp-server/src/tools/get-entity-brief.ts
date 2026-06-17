@@ -79,6 +79,8 @@ export function registerGetEntityBrief(server: McpServer): void {
           student_number: student.studentNumber,
           canonical_name: student.canonicalName,
           email: student.email,
+          launchpad_email: student.launchpadEmail,
+          alt_school_email: student.altSchoolEmail,
           current_phase: student.currentPhase,
           enrollment_status: student.enrollmentStatus,
           cohort: student.cohort,

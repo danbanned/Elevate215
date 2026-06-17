@@ -50,6 +50,8 @@ export function registerGetStudentInfo(server: McpServer): void {
           canonical_name: student.canonicalName,
           student_number: student.studentNumber,
           email: student.email,
+          launchpad_email: student.launchpadEmail,
+          alt_school_email: student.altSchoolEmail,
           phone: student.phone,
           current_phase: student.currentPhase,
           enrollment_status: student.enrollmentStatus,

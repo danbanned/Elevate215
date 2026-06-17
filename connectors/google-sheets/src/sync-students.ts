@@ -52,6 +52,7 @@ export async function syncStudents(): Promise<number> {
 
     const data = {
       canonicalName: s.canonicalName,
+      email: s.launchpadEmail ?? s.altSchoolEmail,
       suffix: s.suffix,
       enrollmentStatus: s.enrollmentStatus,
       currentPhase: s.currentPhase,
