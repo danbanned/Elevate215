@@ -7,7 +7,7 @@ import { runTool, parseStr } from '../tool-helpers.js';
 const NAME = 'get_finance_brief';
 
 const DESCRIPTION =
-  'Get a high-level financial overview of the organization: fund balances and recent donor gifts. Use this as a starting point for any general finance question.';
+  'Get a high-level financial overview of the organization: Aplos fund balances, chart-of-accounts summary, recent Aplos transactions, and recent GiveButter donor gifts. Use this as a starting point for any general finance question.';
 
 const inputSchema = {
   period: z
