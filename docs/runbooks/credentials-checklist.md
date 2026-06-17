@@ -12,7 +12,7 @@ What credentials to request, from whom, and what each one unlocks. Suggested gat
 | 4 | Google OAuth client (`AUTH_GOOGLE_ID` + `AUTH_GOOGLE_SECRET`) | Google Workspace admin (launchpadphilly.org) | HQ dashboard sign-in | Disable middleware locally to view pages without auth |
 | 5 | Google service account (`GOOGLE_SERVICE_ACCOUNT_JSON`) + Sheet IDs + Drive folder ID | Google Workspace admin | `google-sheets`, `google-drive`, `bigquery` connectors | Seed script provides sample data |
 | 6 | `GIVEBUTTER_API_KEY` | Launchpad GiveButter account owner | `givebutter` connector (real REST client already implemented) | Seed includes 2 sample donors |
-| 7 | `APLOS_CLIENT_ID` + `APLOS_API_KEY` | Launchpad Aplos account owner | `aplos` connector + `get_finance_brief` Aplos sections | Finance snapshots from seed |
+| 7 | `APLOS_CLIENT_ID` + `APLOS_API_KEY` | Launchpad Aplos account owner | `aplos` connector + `get_finance_brief` + `query_finances` Aplos sections | ✅ Live — 16K+ records (accounts, funds, transactions) |
 | 8 | `SLACK_BOT_TOKEN` + `SLACK_SIGNING_SECRET` | Launchpad Slack admin | `slack` connector + `search_conversations` Slack source | Drive-only `search_conversations` until Slack lands |
 | 9 | `ROAM_API_KEY` + `ROAM_GRAPH_NAME` | Roam workspace owner | `roam` connector | n/a |
 | 10 | `NOTION_API_KEY` + `NOTION_MEETING_TRANSCRIPTS_DB_ID` | Notion workspace admin | `notion` connector — meeting transcripts → pgvector | n/a |
@@ -38,7 +38,7 @@ What credentials to request, from whom, and what each one unlocks. Suggested gat
 **Tier 2 — light-up connectors**
 
 3. **GiveButter API key (#6)** — REST client is fully implemented; this is the fastest connector to bring online.
-4. **Aplos credentials (#7)** — large finance value; connector skeleton needs implementation but the data model is in place.
+4. **Aplos credentials (#7)** — ✅ live; connector syncs accounts, funds, and transactions into `finance_snapshots`.
 5. **Slack bot token (#8)** — required for `search_conversations` to actually search Slack.
 6. **Google service account (#5)** — the heaviest setup because it requires Google Workspace admin to create a service account, share Sheet/Drive permissions, and gather all the sheet IDs. Worth doing in one batch.
 7. **Roam API key (#9)** — small footprint; Roam is the lightest connector.

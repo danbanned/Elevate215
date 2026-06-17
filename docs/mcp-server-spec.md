@@ -594,19 +594,19 @@ Return a comprehensive financial overview — fund balances, YTD revenue vs. exp
 ```json
 {
   "period": "ytd",
-  "fund_balances": [ /* from query_finances fund_balances */ ],
-  "income_summary": {
-    "total_revenue_cents": 245000,
-    "total_expenses_cents": 189000,
-    "net_cents": 56000,
-    "by_category": []
+  "aplos_funds": [ /* fund records from Aplos (name, balance_account_name, snapshot_date) */ ],
+  "aplos_accounts_summary": {
+    "total": 232,
+    "by_category": { "asset": 40, "liability": 12, "revenue": 80, "expense": 90, "equity": 10 }
   },
-  "active_campaigns": [ /* active Give Butter campaigns */ ],
-  "recent_transactions": [ /* last 10 Aplos transactions */ ]
+  "recent_transactions": [ /* last 20 Aplos transactions (date, memo, amount) */ ],
+  "sheet_fund_balances": [ /* Google Sheets fund balance rows, if any */ ],
+  "recent_gifts": [ /* last 10 GiveButter gifts (amount, date, campaign, donor) */ ],
+  "sources_active": ["aplos", "givebutter", "google_sheets"]
 }
 ```
 
-This tool calls `query_finances` and `query_donations` internally and aggregates.
+Queries Aplos (`finance_snapshots` with `aplos:*` tab names), GiveButter (`donor_gifts` + `donor_contacts`), and Google Sheets fund balances directly.
 
 ---
 
