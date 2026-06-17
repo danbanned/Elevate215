@@ -31,11 +31,11 @@ An internal AI intelligence layer for Launchpad that lets team members query Cla
 
 | Connector | Source | Destination | Status |
 |---|---|---|---|
-| `google-sheets` | Launchpad Dashboard + Outcomes sheets (12 spreadsheets) | Postgres | ✅ Live — all 12 sheet syncs ported; 26K+ records ingested |
+| `google-sheets` | Launchpad Dashboard + Outcomes sheets (12 spreadsheets) | Postgres | ✅ Live — all 12 sheet syncs ported; 27K+ records ingested |
 | `google-drive` | Drive docs folder | Postgres + pgvector | Skeleton — creds available, implementation pending |
 | `bigquery` | `lp-internal-ai` BigQuery project | Postgres | Skeleton — creds available, implementation pending |
 | `givebutter` | GiveButter donation platform | `donor_contacts`, `donor_gifts`, `donor_pipeline` | ✅ Live — REST client syncing donors, gifts, pipeline |
-| `aplos` | Aplos nonprofit accounting | Postgres (finance snapshots) | ✅ Live — RSA-decryption auth; 16K+ records |
+| `aplos` | Aplos nonprofit accounting | `finance_snapshots` (accounts, funds, transactions) | ✅ Live — RSA-decryption auth; 16K+ records; synced daily in production via EventBridge |
 | `notion` | Notion meeting transcripts database | `document_chunks` (pgvector) | ✅ Live — meeting transcript sync with embeddings |
 | `slack` | Designated Slack channels | pgvector | Skeleton — awaiting `SLACK_BOT_TOKEN` |
 | `roam` | Roam chat/messaging app | pgvector | Skeleton — awaiting `ROAM_API_KEY` |
@@ -83,6 +83,19 @@ pnpm sync:bigquery              # bigquery (skeleton)
 pnpm sync:slack                 # slack (skeleton — awaiting SLACK_BOT_TOKEN)
 pnpm sync:roam                  # roam (skeleton — awaiting ROAM_API_KEY)
 pnpm sync:all                   # all connectors in parallel
+
+# Production sync schedule (EventBridge → ECS Fargate)
+# google-sheets: rate(1 hour) — lp-sync-google-sheets task
+# aplos:         cron(30 3 * * ? *) — lp-sync-aplos task
+# To trigger a one-off sync in production:
+#   AWS_PROFILE=lp-internal aws ecs run-task --cluster lp-internal \
+#     --task-definition lp-sync-google-sheets:1 --launch-type FARGATE ...
+
+# Manual image deploy (CI OIDC is broken — use until fixed):
+docker build -f apps/sync/Dockerfile -t lp-sync:latest --platform linux/arm64 .
+docker tag lp-sync:latest 851725317896.dkr.ecr.us-east-1.amazonaws.com/lp-internal/sync:latest
+docker push 851725317896.dkr.ecr.us-east-1.amazonaws.com/lp-internal/sync:latest
+# Same pattern for mcp-server, hq, aws-mcp-server (replace Dockerfile + repo name)
 
 # Database tools
 pnpm db:studio                  # open Prisma Studio
@@ -176,7 +189,22 @@ export async function sync(): Promise<SyncRunRecord> {
 }
 ```
 
-The `runSync` wrapper creates the `sync_runs` row, captures errors, and records duration. See `connectors/givebutter/src/index.ts` as the reference implementation.
+The `runSync` wrapper creates the `sync_runs` row, captures errors, records duration, and runs a **5% integrity guard** — if any declared table drops more than 5% in row count during a sync, an `INTEGRITY WARNING` is appended to the `sync_runs.notes` field.
+
+Pass the `tables` option to declare which tables a connector writes to:
+```ts
+return runSync('connector-name', async () => { ... }, {
+  tables: ['students', 'student_phase_outcomes'],
+});
+```
+
+**Critical sync safety rule:** NEVER use `deleteMany({})` or `TRUNCATE` before inserting data. If the sync crashes midway, the table is left empty with no recovery. Instead:
+1. **Upsert** every row using a stable `sourceId` (platform ID or composite natural key — never row numbers)
+2. **Track** which sourceIds were seen during this run
+3. **After all upserts succeed**, delete only rows whose sourceId was NOT seen
+4. If the sync fails at any point, existing data is untouched
+
+See `connectors/google-sheets/src/sync-employment.ts` as the reference for the upsert + stale-cleanup pattern.
 
 ## Environment Variables
 
