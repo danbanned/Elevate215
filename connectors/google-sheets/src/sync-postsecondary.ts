@@ -5,15 +5,18 @@ import { parsePostsecondaryRow } from './parse.js';
 // ---------------------------------------------------------------------------
 // PostSecondary tab (Student Information V2)
 //
-// One row per (student × institution × enrollment span). Tracks college /
+// One row per (student x institution x enrollment span). Tracks college /
 // university enrollment + degree completion for alumni outcomes reporting.
 // Data shape matches the National Student Clearinghouse export — see
 // POSTSECONDARY_ENROLLMENT_STATUS_LABELS and POSTSECONDARY_CLASS_LEVEL_LABELS
-// in parse.ts for the single-letter code → display string mappings.
+// in parse.ts for the single-letter code -> display string mappings.
 //
-// source_id = `postsecondary:<sheet_row>`.
-// Wipe-before-resync: PostSecondary lives only in the V2 sheet and re-syncing
-// is cheap. A clean wipe avoids orphaned rows when an entry is removed.
+// source_id uses a stable composite natural key:
+//   postsecondary:<studentNumber>:<institution>:<enrollmentBegin>
+// so that row reordering in the sheet does not create orphans.
+//
+// Upsert + stale cleanup: rows are upserted, then any sourceIds NOT seen in
+// this run are deleted. If the sync crashes midway, existing data survives.
 // ---------------------------------------------------------------------------
 
 const EXPECTED_HEADERS = [
@@ -59,6 +62,13 @@ function toDate(yyyymmdd: string | null): Date | null {
   return yyyymmdd ? new Date(`${yyyymmdd}T00:00:00Z`) : null;
 }
 
+function stableSourceId(studentNumber: string, institution: string | null, enrollmentBegin: string | null, enrollmentEnd: string | null): string {
+  const inst = (institution ?? '').trim().toLowerCase().replace(/\s+/g, '_');
+  const begin = enrollmentBegin ?? 'nodate';
+  const end = enrollmentEnd ?? 'nodate';
+  return `postsecondary:${studentNumber}:${inst}:${begin}:${end}`;
+}
+
 export async function syncPostsecondary(): Promise<number> {
   const sheetId = process.env['GOOGLE_SHEETS_STUDENT_INFO_V2'];
   if (!sheetId) throw new Error('GOOGLE_SHEETS_STUDENT_INFO_V2 not set');
@@ -79,15 +89,14 @@ export async function syncPostsecondary(): Promise<number> {
 
   checkHeaders(rows[0] ?? []);
 
-  // Wipe + re-sync so removed/renumbered rows don't linger.
-  await prisma.studentPostsecondary.deleteMany({});
-  console.log('  student_postsecondary: cleared existing rows ahead of re-sync');
-
   let synced = 0;
   let skippedBlank = 0;
   let skippedNoStudent = 0;
   let skippedRowErrors = 0;
   const skippedInstitutions: string[] = [];
+  const seenSourceIds = new Set<string>();
+  // Track occurrence count per base key to disambiguate duplicate combos
+  const keyOccurrences = new Map<string, number>();
 
   for (let i = 1; i < rows.length; i += 1) {
     const raw = rows[i];
@@ -106,7 +115,12 @@ export async function syncPostsecondary(): Promise<number> {
       continue;
     }
 
-    const sourceId = `postsecondary:${i + 1}`;
+    const baseKey = stableSourceId(parsed.studentNumber, parsed.institution, parsed.enrollmentBegin, parsed.enrollmentEnd);
+    const occ = (keyOccurrences.get(baseKey) ?? 0) + 1;
+    keyOccurrences.set(baseKey, occ);
+    const sourceId = occ === 1 ? baseKey : `${baseKey}:${occ}`;
+    seenSourceIds.add(sourceId);
+
     const data = {
       studentNumber:     parsed.studentNumber,
       firstName:         parsed.firstName,
@@ -142,6 +156,16 @@ export async function syncPostsecondary(): Promise<number> {
         `  student_postsecondary: row ${i + 1} (${parsed.studentNumber} @ "${institution}") FAILED — ${msg}`,
       );
       skippedRowErrors += 1;
+    }
+  }
+
+  // Remove rows whose sourceId was not seen (genuinely removed from sheet)
+  if (seenSourceIds.size > 0) {
+    const deleted = await prisma.studentPostsecondary.deleteMany({
+      where: { sourceId: { notIn: [...seenSourceIds] } },
+    });
+    if (deleted.count > 0) {
+      console.log(`  student_postsecondary: removed ${deleted.count} stale rows`);
     }
   }
 

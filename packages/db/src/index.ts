@@ -13,5 +13,5 @@ export {
 
 export type { EntityType, ResolvedEntity, ResolveOptions } from './entity-resolution.js';
 export { runSync } from './sync-runs.js';
-export type { SyncRunResult, SyncRunRecord } from './sync-runs.js';
+export type { SyncRunResult, SyncRunRecord, SyncRunOptions } from './sync-runs.js';
 export { seed } from './seed.js';

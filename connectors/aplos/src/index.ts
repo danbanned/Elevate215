@@ -27,6 +27,8 @@ export async function sync(): Promise<SyncResult> {
       recordsUpserted: total,
       notes: `accounts: ${accounts}; funds: ${funds}; transactions: ${transactions}`,
     };
+  }, {
+    tables: ['finance_snapshots'],
   });
 }
 

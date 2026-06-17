@@ -66,6 +66,19 @@ export async function sync(): Promise<SyncResult> {
       recordsUpserted: total,
       notes: `students: ${students}; outcomes: ${outcomes}; employment: ${employment}; postsecondary: ${postsecondary}; certifications: ${certifications}; dashboard: ${dashboard}; phase_budget: ${phaseBudget}; phase_q3_2026: ${phaseQ3}; phase_2025: ${phase2025}; rapid: ${rapid}; pex: ${pex}; competency: ${competency}; dev_crm: ${devCrm}; attendance: ${attendance}; enrollment: ${enrollment}; distances: ${distanceUpdated} updated / ${distanceSkipped} skipped`,
     };
+  }, {
+    tables: [
+      'students',
+      'student_phase_outcomes',
+      'student_certifications',
+      'student_competencies',
+      'student_employment',
+      'student_postsecondary',
+      'attendance_records',
+      'enrollment_snapshots',
+      'finance_snapshots',
+      'entity_aliases',
+    ],
   });
 }
 

@@ -20,6 +20,8 @@ export async function sync(): Promise<SyncResult> {
       recordsUpserted: stats.chunks_written,
       notes,
     };
+  }, {
+    tables: ['document_chunks'],
   });
 }
 

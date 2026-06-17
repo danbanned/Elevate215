@@ -90,6 +90,8 @@ export async function sync(options: SyncOptions = {}): Promise<SyncResult> {
       recordsUpserted: total,
       notes: `contacts=${contactsUpserted.toString()} gifts=${giftsUpserted.toString()}`,
     };
+  }, {
+    tables: ['donor_contacts', 'donor_gifts', 'donor_pipeline'],
   });
 }
 

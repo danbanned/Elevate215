@@ -69,9 +69,6 @@ export async function syncEnrollment(): Promise<number> {
     return 0;
   }
 
-  await prisma.enrollmentSnapshot.deleteMany({});
-  console.log('  enrollment_snapshots: cleared existing rows ahead of re-sync');
-
   if (rows.length < LAST_DATA_ROW + 1) {
     console.warn(`  skipping enrollment: only ${rows.length} rows, need at least ${LAST_DATA_ROW + 1}`);
     return 0;
@@ -89,6 +86,7 @@ export async function syncEnrollment(): Promise<number> {
   let synced = 0;
   let currentFy = '';
   const maxCol = Math.max(fyRow.length, monthRow.length);
+  const seenSourceIds = new Set<string>();
 
   for (let c = LABEL_COL_IDX + 1; c < maxCol; c += 1) {
     const fyCell = fyRow[c]?.trim();
@@ -110,6 +108,7 @@ export async function syncEnrollment(): Promise<number> {
 
       const periodKey = period.toISOString().slice(0, 7);
       const sourceId = `enrollment:${periodKey}:${phase}`;
+      seenSourceIds.add(sourceId);
 
       await prisma.enrollmentSnapshot.upsert({
         where: { sourceId },
@@ -117,6 +116,16 @@ export async function syncEnrollment(): Promise<number> {
         update: { periodMonth: period, phase, count: countStr },
       });
       synced += 1;
+    }
+  }
+
+  // Remove rows whose sourceId was not seen (genuinely removed from sheet)
+  if (seenSourceIds.size > 0) {
+    const deleted = await prisma.enrollmentSnapshot.deleteMany({
+      where: { sourceId: { notIn: [...seenSourceIds] } },
+    });
+    if (deleted.count > 0) {
+      console.log(`  enrollment_snapshots: removed ${deleted.count} stale rows`);
     }
   }
 

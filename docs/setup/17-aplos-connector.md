@@ -142,9 +142,10 @@ const startDate = sevenDaysAgo.toISOString().split('T')[0];
 
 ## Verification checklist
 
-- [ ] `pnpm sync:aplos` authenticates and fetches data without errors
-- [ ] `finance_snapshots` table shows rows with `source = 'aplos'`
-- [ ] `query_finances` MCP tool returns Aplos data
+- [x] `pnpm sync:aplos` authenticates and fetches data without errors
+- [x] `finance_snapshots` table shows rows with `tab_name` prefixed `aplos:` (accounts, funds, transactions)
+- [x] `query_finances` MCP tool returns Aplos data via `aplos_accounts`, `aplos_funds`, `aplos_transactions` query types
+- [x] `get_finance_brief` includes Aplos funds, accounts summary, and recent transactions
 - [ ] EventBridge rule added for daily sync at 3:30am UTC
 
 ---

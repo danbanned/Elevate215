@@ -52,6 +52,7 @@ export async function syncStudents(): Promise<number> {
 
     const data = {
       canonicalName: s.canonicalName,
+      email: s.launchpadEmail ?? s.altSchoolEmail,
       suffix: s.suffix,
       enrollmentStatus: s.enrollmentStatus,
       currentPhase: s.currentPhase,
@@ -126,15 +127,9 @@ export async function syncOutcomes(): Promise<number> {
   const sheetId = process.env['GOOGLE_SHEETS_STUDENT_INFO_V2'];
   if (!sheetId) throw new Error('GOOGLE_SHEETS_STUDENT_INFO_V2 not set');
 
-  // Wipe-before-resync: the V2 sheet is the authoritative source for phase
-  // outcomes. A row that existed in the legacy Outcomes tab but is absent
-  // from the new PhaseCompletion tab must not linger as stale data.
-  // student_phase_outcomes has no inbound FKs, so wiping is safe.
-  await prisma.studentPhaseOutcome.deleteMany({});
-  console.log('  student_phase_outcomes: cleared existing rows ahead of re-sync from PhaseCompletion');
-
   const dataRows = await getSheetRows(sheetId, 'PhaseCompletion!A2:O');
   let synced = 0;
+  const seenStudentIds = new Set<string>();
 
   for (let i = 0; i < dataRows.length; i += 1) {
     const raw = dataRows[i];
@@ -150,6 +145,8 @@ export async function syncOutcomes(): Promise<number> {
       console.warn(`syncOutcomes: student ${parsed.studentNumber} not found, skipping row ${i + 2}`);
       continue;
     }
+
+    seenStudentIds.add(student.id);
 
     const data = {
       foundationsStatus: parsed.foundationsStatus,
@@ -173,6 +170,16 @@ export async function syncOutcomes(): Promise<number> {
     });
 
     synced += 1;
+  }
+
+  // Clean up rows for students no longer in the sheet (after all upserts succeed)
+  if (seenStudentIds.size > 0) {
+    const deleted = await prisma.studentPhaseOutcome.deleteMany({
+      where: { studentId: { notIn: [...seenStudentIds] } },
+    });
+    if (deleted.count > 0) {
+      console.log(`  student_phase_outcomes: removed ${deleted.count} stale rows`);
+    }
   }
 
   return synced;
