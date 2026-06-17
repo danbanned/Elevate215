@@ -1,4 +1,4 @@
-import { prisma } from '@lp-ai/lib-db';
+import { prisma, linkAlias } from '@lp-ai/lib-db';
 import { getSheetRows } from './sheets-client.js';
 import {
   EXPECTED_STUDENTS_V2_HEADERS,
@@ -94,10 +94,26 @@ export async function syncStudents(): Promise<number> {
       parentalEd: s.parentalEd,
     };
 
-    await prisma.student.upsert({
+    const student = await prisma.student.upsert({
       where: { studentNumber: s.studentNumber },
       create: { studentNumber: s.studentNumber, ...data },
       update: data,
+    });
+
+    // Ensure entity_aliases exist so resolveEntity() can find this student.
+    await linkAlias({
+      alias: s.canonicalName,
+      entityType: 'student',
+      entityId: student.id,
+      source: 'google_sheets',
+      confidence: 1.0,
+    });
+    await linkAlias({
+      alias: s.studentNumber,
+      entityType: 'student',
+      entityId: student.id,
+      source: 'google_sheets',
+      confidence: 1.0,
     });
 
     synced += 1;
