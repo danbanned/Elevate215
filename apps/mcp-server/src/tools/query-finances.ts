@@ -8,7 +8,7 @@ import { runTool, parseStr, parseNum } from '../tool-helpers.js';
 const NAME = 'query_finances';
 
 const DESCRIPTION =
-  'Look up financial data from finance_snapshots. Each query_type maps to one or more sheet tabs. Returns the raw rowData JSON so the caller can read whichever columns matter for the question.';
+  'Look up financial data from finance_snapshots. Each query_type maps to a data source tab (Google Sheets or Aplos accounting). Returns the raw rowData JSON so the caller can read whichever columns matter for the question.';
 
 const inputSchema = {
   query_type: z.enum([
@@ -38,6 +38,9 @@ const inputSchema = {
     'dev_launchpad_pipeline',
     'dev_grants_tracker',
     'dev_contacts',
+    'aplos_accounts',
+    'aplos_funds',
+    'aplos_transactions',
   ]),
   tab_name: z.string().optional().describe('Override tab_name match (advanced).'),
   period: z.string().optional(),
@@ -69,6 +72,9 @@ const QUERY_TYPE_TO_TAB: Record<string, string> = {
   dev_launchpad_pipeline: 'development:Launchpad Pipeline',
   dev_grants_tracker: 'development:Grants Tracker',
   dev_contacts: 'development:Contacts',
+  aplos_accounts: 'aplos:accounts',
+  aplos_funds: 'aplos:funds',
+  aplos_transactions: 'aplos:transactions',
 };
 
 const QUERY_TYPE_TO_TAB_PREFIX: Record<string, string> = {
@@ -114,7 +120,7 @@ export function registerQueryFinances(server: McpServer): void {
           period: r.period,
           row_data: r.rowData,
         })),
-        sources: ['google_sheets'],
+        sources: ['google_sheets', 'aplos'],
       };
     }),
   );

@@ -22,7 +22,21 @@ export function registerGetFinanceBrief(server: McpServer): void {
       const raw = input as Record<string, unknown>;
       const period = parseStr(raw, 'period') ?? 'ytd';
 
-      const [fundBalances, recentGifts] = await Promise.all([
+      const [aplosFunds, aplosAccounts, recentTransactions, sheetFundBalances, recentGifts] = await Promise.all([
+        prisma.financeSnapshot.findMany({
+          where: { tabName: 'aplos:funds' },
+          orderBy: { period: 'desc' },
+          take: 50,
+        }),
+        prisma.financeSnapshot.findMany({
+          where: { tabName: 'aplos:accounts' },
+          take: 300,
+        }),
+        prisma.financeSnapshot.findMany({
+          where: { tabName: 'aplos:transactions' },
+          orderBy: { period: 'desc' },
+          take: 20,
+        }),
         prisma.financeSnapshot.findMany({
           where: { tabName: 'fund_balances' },
           orderBy: { period: 'desc' },
@@ -35,13 +49,26 @@ export function registerGetFinanceBrief(server: McpServer): void {
         }),
       ]);
 
+      const mapSnapshot = (f: typeof aplosFunds[number]): { source_id: string; period: string | null; row_data: unknown } => ({
+        source_id: f.sourceId,
+        period: f.period,
+        row_data: f.rowData,
+      });
+
       return {
         period,
-        fund_balances: fundBalances.map((f) => ({
-          source_id: f.sourceId,
-          period: f.period,
-          row_data: f.rowData,
-        })),
+        aplos_funds: aplosFunds.map(mapSnapshot),
+        aplos_accounts_summary: {
+          total: aplosAccounts.length,
+          by_category: aplosAccounts.reduce<Record<string, number>>((acc, a) => {
+            const data = a.rowData as Record<string, unknown> | null;
+            const cat = (typeof data?.category === 'string' ? data.category : 'unknown');
+            acc[cat] = (acc[cat] ?? 0) + 1;
+            return acc;
+          }, {}),
+        },
+        recent_transactions: recentTransactions.map(mapSnapshot),
+        sheet_fund_balances: sheetFundBalances.map(mapSnapshot),
         recent_gifts: recentGifts.map((g) => ({
           amount: g.amount,
           gift_date: g.giftDate,
@@ -54,8 +81,7 @@ export function registerGetFinanceBrief(server: McpServer): void {
               .join(' ') ||
               null),
         })),
-        sources_active: ['google_sheets'],
-        sources_deferred: ['aplos', 'givebutter'],
+        sources_active: ['aplos', 'givebutter', 'google_sheets'],
       };
     }),
   );
