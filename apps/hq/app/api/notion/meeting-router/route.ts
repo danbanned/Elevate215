@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import crypto from 'node:crypto';
 import { loadEnv } from '@lp-ai/lib-config';
-import { applyRouting } from './router-logic.js';
+import { applyRouting } from './router-logic';
 
 export const dynamic = 'force-dynamic';
 

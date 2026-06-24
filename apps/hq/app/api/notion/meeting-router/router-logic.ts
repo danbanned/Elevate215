@@ -5,8 +5,8 @@ import {
   findPeopleByEmail,
   updatePageProperties,
   type NotionPage,
-} from './notion.js';
-import { listEventsForUser, type CalendarEvent } from './google-calendar.js';
+} from './notion';
+import { listEventsForUser, type CalendarEvent } from './google-calendar';
 
 export type Track = 'Programs' | 'Inc. Clients';
 
