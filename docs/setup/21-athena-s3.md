@@ -28,7 +28,6 @@ aws s3api put-bucket-versioning \
 # Create folder structure
 aws s3api put-object --bucket lp-internal-analytics --key raw/
 aws s3api put-object --bucket lp-internal-analytics --key exports/postgres/
-aws s3api put-object --bucket lp-internal-analytics --key exports/bigquery/
 aws s3api put-object --bucket lp-internal-analytics --key athena-results/
 ```
 

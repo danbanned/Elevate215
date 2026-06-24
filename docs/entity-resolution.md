@@ -6,13 +6,12 @@ The same person appears differently across every data source:
 
 | Source | How a student might appear |
 |---|---|
-| BigQuery (attendance) | Student ID `S1042`, full name `Maria Garcia` |
-| BigQuery (Beacon) | Student ID `S1042` |
+| Google Sheets | Student ID `S1042`, full name `Maria Garcia` |
 | Google Drive | `Maria G.`, `Maria Garcia`, student ID in a column |
 | Slack | `@maria.g`, display name `Maria 🌟` |
 | Notion (meeting transcripts) | `Maria`, `Maria Garcia`, `the student we discussed` |
 
-Without resolution, MCP tools can't answer "What's Maria's attendance?" when given a Slack handle — they don't know `@maria.g` maps to student ID `S1042`.
+Without resolution, MCP tools can't answer "What's Maria's attendance?" when given a Slack handle — they don't know `@maria.g` maps to student number `LP0042`.
 
 ## Solution: Canonical Entity Table + Alias Graph
 
@@ -22,7 +21,7 @@ Every student and staff member has one canonical record in `students` or `staff`
 entity_aliases
   source: 'slack',    alias: '@maria.g'       → students.id = uuid-A
   source: 'drive',    alias: 'Maria G.'       → students.id = uuid-A
-  source: 'bigquery', alias: 'S1042'          → students.id = uuid-A
+  source: 'sheets',   alias: 'LP0042'          → students.id = uuid-A
   source: 'drive',    alias: 'Maria Garcia'   → students.id = uuid-A
 ```
 
@@ -30,13 +29,15 @@ MCP tools resolve any alias to a canonical entity ID before querying. The entity
 
 ## Cold Start (Initial Seeding)
 
-The Google Drive "Student Information for Launchpad LLMs" document is the seed source. It contains a structured table with:
-- Student ID
-- Full name
-- Common nickname(s) (if documented)
-- Email
+The Google Sheets V2 "Student Information" spreadsheet is the seed source. The `google-sheets` connector creates `students` rows + `entity_aliases` rows (keyed on canonical name and student number) before other sub-syncs run.
 
-The Google Drive connector processes this table first and creates `students` rows + `entity_aliases` rows before ingesting any narrative content.
+Student email mapping:
+- `students.email` = `launchpad_email ?? alt_school_email` (set during sheets sync)
+- `students.launchpad_email` — Launchpad-issued email (column Q in Students tab)
+- `students.alt_school_email` — alternative school email (column R in Students tab)
+- Personal email (column S) is intentionally excluded (PII)
+
+MCP tools (`get_student_info`, `get_entity_brief`, `query_students`) return all three email fields.
 
 Staff records are seeded manually from the team roster (a one-time script).
 

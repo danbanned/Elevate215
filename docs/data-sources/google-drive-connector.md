@@ -38,7 +38,7 @@ For manual triggering: `pnpm --filter google-drive sync`
 
 ## Auth
 
-- Same Google service account as BigQuery connector (`GOOGLE_SERVICE_ACCOUNT_JSON`)
+- Same Google service account as the Sheets connector (`GOOGLE_SERVICE_ACCOUNT_JSON`)
 - Service account must have Viewer access to the Drive folder
 - Uses Google Drive API v3 and Google Docs API
 
@@ -60,9 +60,9 @@ The "Student Information for Launchpad LLMs" document is **the primary seed sour
 
 1. Parse the student table in the document
 2. For each student row, upsert into `students` (using email or student ID as conflict key)
-3. Create `entity_aliases` rows for: full name (source: 'drive'), student ID (source: 'bigquery'), nickname if present (source: 'drive')
+3. Create `entity_aliases` rows for: full name (source: 'drive'), student number (source: 'sheets'), nickname if present (source: 'drive')
 
-This must complete before the BigQuery connector's first run so student IDs can be resolved.
+This must complete before other connectors run so student IDs can be resolved.
 
 ## Error Handling
 

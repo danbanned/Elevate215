@@ -87,13 +87,10 @@ If `SYNC_SECRET` is set in `.env`, the `/mcp` endpoint requires `Authorization: 
 Each connector exposes a CLI:
 ```bash
 pnpm sync:sheets       # google-sheets (live — 12 syncs)
-pnpm sync:givebutter   # givebutter (live)
 pnpm sync:aplos        # aplos (live)
 pnpm sync:notion       # notion meeting transcripts (live)
 pnpm sync:drive        # google-drive (skeleton)
-pnpm sync:bigquery     # bigquery (skeleton)
 pnpm sync:slack        # slack (skeleton)
-pnpm sync:roam         # roam (skeleton)
 ```
 
 Live connectors sync real data when credentials are set. Skeleton connectors return `status: "noop"`. Each run writes a row to `sync_runs` — visible in HQ at `/sync`.
@@ -153,13 +150,11 @@ docker run --rm -p 8091:8080 \
 ## Known things that won't work without credentials
 
 - `pnpm sync:drive` — requires `GOOGLE_SERVICE_ACCOUNT_JSON` (creds available but connector is skeleton)
-- `pnpm sync:bigquery` — requires Google service account + BigQuery access (creds available but connector is skeleton)
 - `pnpm sync:slack` — requires `SLACK_BOT_TOKEN`
-- `pnpm sync:roam` — requires `ROAM_API_KEY` + `ROAM_GRAPH_NAME`
 - MCP tools that embed (`search_documents`, `search_conversations`, `search_by_person`) — require `OPENAI_API_KEY`
 - AWS Secrets Manager fetch path — requires `USE_AWS_SECRETS=true` and an authenticated AWS environment
 - Google OAuth sign-in to HQ — requires `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` (or set `HQ_DEV_NO_AUTH=true`)
 
-**Connectors that are live with credentials:** `sync:sheets`, `sync:givebutter`, `sync:aplos`, `sync:notion`.
+**Connectors that are live with credentials:** `sync:sheets`, `sync:aplos`, `sync:notion`.
 
 Everything else above works against a clean clone.

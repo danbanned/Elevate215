@@ -2,7 +2,7 @@
 
 ## Tool Availability
 
-The server currently exposes **16 tools**, all active — backed by Google Sheets, GiveButter, Aplos, and Notion connectors. Semantic search uses pgvector with OpenAI `text-embedding-3-large` embeddings (1536 dimensions).
+The server currently exposes **16 tools**, all active — backed by Google Sheets, Aplos, and Notion connectors. Semantic search uses pgvector with OpenAI `text-embedding-3-large` embeddings (1536 dimensions).
 
 **Active tools (16):**
 - `get_student_info` — Sheets student roster + Drive student info doc
@@ -20,10 +20,9 @@ The server currently exposes **16 tools**, all active — backed by Google Sheet
 - `search_by_person` — document search scoped to a student or staff name
 - `search_documents` — raw document chunk search with optional entity filter
 - `get_entity_brief` — student profile + phase progression + certifications + recent mentions; **also surfaces donor profile + giving history + pipeline + grants** when the named person matches a donor
-- `get_finance_brief` — fund balances + YTD income/expenses + campaigns + transactions
+- `get_finance_brief` — Aplos fund balances, chart-of-accounts summary, and recent Aplos transactions
 
 **Still pending:**
-- BigQuery-backed `query_attendance` (current sheet-based version stands in)
 - Slack connector for `search_conversations`
 
 Composite tools (`get_entity_brief`, `get_finance_brief`) MUST gracefully omit sections whose underlying data source is not yet active, rather than erroring. Each section in the response should be optional and the tool should annotate which sources contributed.
@@ -46,8 +45,7 @@ Every tool call is logged to the `usage_logs` Postgres table (tool name, timesta
 
 Query Launchpad student attendance from the three cohort sheets unified into the `attendance_records` table. Supports per-student rates, aggregate breakdowns by any demographic dimension, and raw event drill-downs over a date range.
 
-**V0.1 source:** Three Google Sheets (`GOOGLE_SHEETS_ATTENDANCE_COHORT_1/2/3`).
-**V0.2 transition:** When BigQuery ships, this tool's data source moves to BigQuery while keeping the same tool surface.
+**Source:** Three Google Sheets (`GOOGLE_SHEETS_ATTENDANCE_COHORT_1/2/3`).
 
 **Cohort shapes:**
 - Cohort 1 — weekly aggregate rows with a `Percentage` column (0–100); no P/A/E codes.
@@ -289,7 +287,7 @@ Retrieve a student's structured profile.
     "goals": ["college readiness", "internship by senior year"],
     "known_aliases": [
       { "source": "slack", "alias": "@maria.g" },
-      { "source": "bigquery", "alias": "S1042" }
+      { "source": "sheets", "alias": "S1042" }
     ]
   },
   "entity_resolved": true,
@@ -426,7 +424,7 @@ Return a full summary card for a person — student profile + phase progression 
   "donor_grants": [],
   "recent_mentions": [ /* top 5 from search_by_person */ ],
   "sources_active": ["google_sheets", "google_drive"],
-  "sources_deferred": ["bigquery_attendance", "slack", "notion"]
+  "sources_deferred": ["slack", "notion"]
 }
 ```
 
@@ -471,13 +469,16 @@ Look up financial data across multiple ingested sheets — Launchpad budgets and
 | `dev_launchpad_pipeline` | `development:launchpad pipeline` | Launchpad-specific asks (already Launchpad-scoped; ask_amount, status, fy, month, probability) |
 | `dev_grants_tracker` | `development:grants tracker` | Grants lifecycle (deadlines, report due dates, period start/end, restrictions) |
 | `dev_contacts` | `development:contacts` | Donor master records (donor_name, donor_type_coa, status, primary_fund, lifetime_giving, FY giving totals) |
+| `aplos_accounts` | `aplos:accounts` | Aplos chart of accounts (account_number, name, category, type, activity) |
+| `aplos_funds` | `aplos:funds` | Aplos fund snapshots (fund name, balance_account_name, snapshot_date) |
+| `aplos_transactions` | `aplos:transactions` | Aplos accounting transactions (date, amount, memo, contact) |
 
 **Input Schema:**
 ```json
 {
   "type": "object",
   "properties": {
-    "query_type": { "type": "string", "enum": ["prior_month", "ytd", "forecast", "monthly", "fund_balances", "annual", "budget_actuals", "phase_budget_dashboard", "phase_budget_monthly_liftoff", "phase_budget_monthly_hs", "q3_2026_actuals_global_pct", "q3_2026_actuals_hc_pct", "q3_2026_actuals", "phase_actuals_2025_global_pct", "phase_actuals_2025_hc_pct", "phase_actuals_2025_actuals", "rapid_dashboard", "rapid_transactions", "pex_dashboard", "pex_transactions", "dev_giving_history", "dev_prospect_pipeline", "dev_denied", "dev_launchpad_pipeline", "dev_grants_tracker", "dev_contacts"] },
+    "query_type": { "type": "string", "enum": ["prior_month", "ytd", "forecast", "monthly", "fund_balances", "annual", "budget_actuals", "phase_budget_dashboard", "phase_budget_monthly_liftoff", "phase_budget_monthly_hs", "q3_2026_actuals_global_pct", "q3_2026_actuals_hc_pct", "q3_2026_actuals", "phase_actuals_2025_global_pct", "phase_actuals_2025_hc_pct", "phase_actuals_2025_actuals", "rapid_dashboard", "rapid_transactions", "pex_dashboard", "pex_transactions", "dev_giving_history", "dev_prospect_pipeline", "dev_denied", "dev_launchpad_pipeline", "dev_grants_tracker", "dev_contacts", "aplos_accounts", "aplos_funds", "aplos_transactions"] },
     "fund": { "type": "string", "description": "Filter by fund name (partial match). On dev_* types matches across the standard fund/project columns." },
     "category": { "type": "string", "description": "Filter by account name / category (partial match)." },
     "row_type": { "type": "string", "enum": ["detail", "summary", "all"], "description": "Default 'all'." },
@@ -559,14 +560,6 @@ If the name resolves to multiple donors, returns `ambiguous: true` with a `candi
 
 ---
 
-### `query_donations` *(deferred to V0.2)*
-
-Originally specced for Give Butter integration — not implemented in V0.1. For donor and gift queries, use `query_donors` and `query_finances` `dev_*` types (Building21 Development CRM) instead.
-
-When the Give Butter connector ships in V0.2, this tool will provide campaign-level fundraising data (goals, progress, recurring gifts) that's distinct from the relationship-management data in the CRM.
-
----
-
 ### `get_finance_brief`
 
 Return a comprehensive financial overview — fund balances, YTD revenue vs. expenses, top campaigns, recent transactions.
@@ -601,12 +594,11 @@ Return a comprehensive financial overview — fund balances, YTD revenue vs. exp
   },
   "recent_transactions": [ /* last 20 Aplos transactions (date, memo, amount) */ ],
   "sheet_fund_balances": [ /* Google Sheets fund balance rows, if any */ ],
-  "recent_gifts": [ /* last 10 GiveButter gifts (amount, date, campaign, donor) */ ],
-  "sources_active": ["aplos", "givebutter", "google_sheets"]
+  "sources_active": ["aplos", "google_sheets"]
 }
 ```
 
-Queries Aplos (`finance_snapshots` with `aplos:*` tab names), GiveButter (`donor_gifts` + `donor_contacts`), and Google Sheets fund balances directly.
+Queries Aplos (`finance_snapshots` with `aplos:*` tab names) and Google Sheets fund balances directly.
 
 ---
 

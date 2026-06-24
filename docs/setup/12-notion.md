@@ -48,11 +48,9 @@ Data sources → Connectors → Postgres (RDS) + pgvector → MCP Server → Cla
 CONNECTORS
 - Google Sheets (hourly) → students, outcomes, finances, donors, attendance
 - Google Drive (every 6h) → document chunks + embeddings
-- BigQuery (hourly) → outcomes/enrollment from lp-internal-ai project
-- GiveButter (daily) → donor gifts and contacts
 - Aplos (daily) → finance snapshots
 - Slack (hourly) → message chunks for semantic search
-- Roam (hourly) → message/note chunks for semantic search
+- Notion (hourly) → meeting transcript chunks for semantic search
 
 INFRASTRUCTURE
 - Database: AWS RDS Postgres 16 (us-east-1) + pgvector extension
@@ -93,8 +91,7 @@ Starter ADRs to create:
 - ADR-002: Migrate from Drizzle to Prisma
 - ADR-003: Migrate from Pinecone to pgvector
 - ADR-004: Migrate from Voyage AI to OpenAI embeddings
-- ADR-005: BigQuery as source connector (not warehouse)
-- ADR-006: Athena over S3 as analytics warehouse
+- ADR-005: Athena over S3 as analytics warehouse
 
 ---
 
@@ -108,10 +105,8 @@ List where each secret lives — names only, never values:
 | Anthropic API key | AWS Secrets Manager: `lp-internal/anthropic` |
 | OpenAI API key | AWS Secrets Manager: `lp-internal/openai` |
 | Google service account | AWS Secrets Manager: `lp-internal/google` |
-| GiveButter API key | AWS Secrets Manager: `lp-internal/givebutter` |
 | Aplos credentials | AWS Secrets Manager: `lp-internal/aplos` |
 | Slack bot token | AWS Secrets Manager: `lp-internal/slack` |
-| Roam credentials | AWS Secrets Manager: `lp-internal/roam` |
 | NextAuth secret | AWS Secrets Manager: `lp-internal/nextauth` |
 | Sentry DSNs | AWS Secrets Manager: `lp-internal/sentry` |
 

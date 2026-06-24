@@ -73,11 +73,8 @@ packages/config/     → Typed env loader (Secrets Manager + .env fallback)
 
 connectors/google-sheets/   → Sheets → Postgres
 connectors/google-drive/    → Drive docs → Postgres + pgvector
-connectors/bigquery/        → BigQuery → Postgres (read-only source pull)
-connectors/givebutter/      → GiveButter → Postgres
 connectors/aplos/           → Aplos accounting → Postgres
 connectors/slack/           → Slack channels → pgvector
-connectors/roam/            → Roam messages → pgvector
 
 docs/setup/          → This series of setup guides (00–21)
 docs/runbooks/       → Operational playbooks (sync failures, RDS alerts, secret rotation)
@@ -98,11 +95,8 @@ pnpm --filter @lp-ai/mcp-server dev
 # Run all connector syncs
 pnpm sync:sheets
 pnpm sync:drive
-pnpm sync:bigquery
-pnpm sync:givebutter
 pnpm sync:aplos
 pnpm sync:slack
-pnpm sync:roam
 
 # Database
 pnpm db:generate     # Regenerate Prisma client after schema changes

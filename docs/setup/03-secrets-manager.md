@@ -5,7 +5,7 @@
 **Prerequisites:**
 - Phase 1 complete — AWS CLI configured
 - Phase 2 complete — RDS is running and `lpapp` password exists
-- All API keys collected: Anthropic, OpenAI, Google service account, GiveButter, Aplos, Slack, Roam
+- All API keys collected: Anthropic, OpenAI, Google service account, Aplos, Slack
 
 ---
 
@@ -54,12 +54,6 @@ aws secretsmanager create-secret \
     "AUTH_GOOGLE_SECRET":"..."
   }'
 
-# GiveButter
-aws secretsmanager create-secret \
-  --name lp-internal/givebutter \
-  --description "GiveButter API key" \
-  --secret-string '{"GIVEBUTTER_API_KEY":"..."}'
-
 # Aplos
 aws secretsmanager create-secret \
   --name lp-internal/aplos \
@@ -71,12 +65,6 @@ aws secretsmanager create-secret \
   --name lp-internal/slack \
   --description "Slack bot credentials" \
   --secret-string '{"SLACK_BOT_TOKEN":"xoxb-...","SLACK_SIGNING_SECRET":"..."}'
-
-# Roam
-aws secretsmanager create-secret \
-  --name lp-internal/roam \
-  --description "Roam API credentials" \
-  --secret-string '{"ROAM_API_KEY":"...","ROAM_GRAPH_NAME":"..."}'
 
 # Sync shared secret (EventBridge → MCP server auth)
 aws secretsmanager create-secret \
@@ -169,7 +157,7 @@ In production (ECS Fargate), no `.env` file exists. The execution role attached 
 
 ## Verification checklist
 
-- [ ] All 11 secrets visible in AWS Console → Secrets Manager
+- [ ] All 9 secrets visible in AWS Console → Secrets Manager
 - [ ] `aws secretsmanager get-secret-value --secret-id lp-internal/db` returns the correct JSON
 - [ ] `packages/config/` directory created with `package.json` and `tsconfig.json`
 
@@ -186,7 +174,7 @@ aws secretsmanager get-secret-value --secret-id lp-internal/google --query Secre
 
 ## Known pitfalls
 
-- **Secrets Manager costs $0.40/secret/month** — 11 secrets ≈ $4.40/month. Acceptable.
+- **Secrets Manager costs $0.40/secret/month** — 9 secrets ≈ $3.60/month. Acceptable.
 - **Secret names are case-sensitive** — always use lowercase `lp-internal/<name>`
 - **Don't store secrets in git** — `.env` is in `.gitignore`. Never commit a filled-in `.env` file.
 - **Rotation** — Secrets Manager supports automatic rotation. Not required at this scale, but worth enabling on `lp-internal/db` once the system is stable.
