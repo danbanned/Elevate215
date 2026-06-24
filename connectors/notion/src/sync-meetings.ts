@@ -99,14 +99,60 @@ function extractRelationOrMultiSelect(prop: NotionProperty | undefined): string[
   return [];
 }
 
-function extractMeta(page: NotionPage): ExtractedMeta {
+// Resolve relation properties (e.g. Attendees/Owner linked to the People & Entities DB)
+// into human-readable names. Cached per run so a person referenced across many meetings
+// is only fetched once.
+const personNameCache = new Map<string, string>();
+
+async function resolvePersonName(pageId: string): Promise<string> {
+  const cached = personNameCache.get(pageId);
+  if (cached !== undefined) return cached;
+  try {
+    const related = await getPage<NotionPage>(pageId);
+    const name = extractTitle(related.properties) || pageId;
+    personNameCache.set(pageId, name);
+    return name;
+  } catch {
+    // A related page the integration can't read (or a stale id) — fall back to the id
+    // rather than failing the whole meeting.
+    personNameCache.set(pageId, pageId);
+    return pageId;
+  }
+}
+
+function extractRelationIds(prop: NotionProperty | undefined): string[] {
+  if (!prop || prop.type !== 'relation') return [];
+  const arr = (prop as { relation?: Array<{ id?: string }> }).relation;
+  return (arr ?? []).map((r) => r.id ?? '').filter(Boolean);
+}
+
+// Attendees may be a People relation (current Notion DBs), a Notion `people` property,
+// or a `multi_select` of names (legacy). Handle all three.
+async function resolveAttendees(prop: NotionProperty | undefined): Promise<string[]> {
+  if (!prop) return [];
+  if (prop.type === 'relation') {
+    return Promise.all(extractRelationIds(prop).map(resolvePersonName));
+  }
+  return extractPeopleOrMultiSelect(prop);
+}
+
+async function resolveOwner(prop: NotionProperty | undefined): Promise<string | null> {
+  if (!prop) return null;
+  if (prop.type === 'relation') {
+    const ids = extractRelationIds(prop);
+    return ids.length > 0 ? resolvePersonName(ids[0]!) : null;
+  }
+  return extractSinglePerson(prop);
+}
+
+export async function extractMeta(page: NotionPage): Promise<ExtractedMeta> {
   const props = page.properties;
   return {
     title: extractTitle(props),
     meeting_date: extractDate(props['Date']),
     visibility: extractMultiSelect(props['Visibility']),
-    attendees: extractPeopleOrMultiSelect(props['Attendees']),
-    owner: extractSinglePerson(props['Owner']),
+    attendees: await resolveAttendees(props['Attendees']),
+    owner: await resolveOwner(props['Owner']),
     project: extractRelationOrMultiSelect(props['Project']),
     tags: extractMultiSelect(props['Tags']),
     meeting_type: extractSelect(props['Type']),
@@ -124,9 +170,15 @@ interface SyncStats {
 }
 
 export async function syncMeetings(opts?: { incrementalSince?: Date }): Promise<SyncStats> {
-  const databaseId = process.env['NOTION_MEETING_TRANSCRIPTS_DB_ID'];
-  if (!databaseId) {
+  const raw = process.env['NOTION_MEETING_TRANSCRIPTS_DB_ID'];
+  if (!raw) {
     throw new Error('NOTION_MEETING_TRANSCRIPTS_DB_ID not set');
+  }
+  // Supports one or more meeting databases (comma-separated) — e.g. the Programs and
+  // Inc. Clients Meetings DBs. Each is queried and chunked into document_chunks the same way.
+  const databaseIds = raw.split(',').map((s) => s.trim()).filter(Boolean);
+  if (databaseIds.length === 0) {
+    throw new Error('NOTION_MEETING_TRANSCRIPTS_DB_ID is set but contains no database ids');
   }
 
   const stats: SyncStats = {
@@ -145,28 +197,30 @@ export async function syncMeetings(opts?: { incrementalSince?: Date }): Promise<
       }
     : undefined;
 
-  for await (const page of queryDatabase<NotionPage>(databaseId, filter)) {
-    stats.pages_discovered += 1;
+  for (const databaseId of databaseIds) {
+    for await (const page of queryDatabase<NotionPage>(databaseId, filter)) {
+      stats.pages_discovered += 1;
 
-    if (page.archived) {
-      stats.pages_skipped_archived += 1;
-      continue;
-    }
+      if (page.archived) {
+        stats.pages_skipped_archived += 1;
+        continue;
+      }
 
-    const meta = extractMeta(page);
-    if (meta.visibility.length === 0) {
-      stats.pages_skipped_no_visibility += 1;
-      console.warn(`  skipping page ${page.id} ("${meta.title || '<untitled>'}"): no Visibility tag`);
-      continue;
-    }
+      const meta = await extractMeta(page);
+      if (meta.visibility.length === 0) {
+        stats.pages_skipped_no_visibility += 1;
+        console.warn(`  skipping page ${page.id} ("${meta.title || '<untitled>'}"): no Visibility tag`);
+        continue;
+      }
 
-    try {
-      const written = await syncOnePage(databaseId, page, meta);
-      stats.chunks_written += written;
-      stats.pages_synced += 1;
-    } catch (err) {
-      stats.pages_skipped_error += 1;
-      console.error(`  failed page ${page.id}: ${err instanceof Error ? err.message : String(err)}`);
+      try {
+        const written = await syncOnePage(databaseId, page, meta);
+        stats.chunks_written += written;
+        stats.pages_synced += 1;
+      } catch (err) {
+        stats.pages_skipped_error += 1;
+        console.error(`  failed page ${page.id}: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
   }
 

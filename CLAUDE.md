@@ -17,7 +17,7 @@ An internal AI intelligence layer for Launchpad that lets team members query Cla
 | Embeddings | OpenAI `text-embedding-3-large` (1536 dimensions) |
 | Structured DB | Postgres 16 via Prisma ORM (local Docker today, AWS RDS in production) |
 | Vector search | pgvector extension |
-| App hosting | AWS ECS Fargate (production); local Docker images built and verified |
+| App hosting | AWS ECS Fargate (production); images built & deployed by GitHub Actions (deploy.yml) |
 | Cron / scheduling | AWS EventBridge |
 | Secrets | AWS Secrets Manager (production); `.env` for local dev |
 | Monitoring | Sentry |
@@ -85,23 +85,17 @@ pnpm sync:all                   # all connectors in parallel
 #   AWS_PROFILE=lp-internal aws ecs run-task --cluster lp-internal \
 #     --task-definition lp-sync-google-sheets:1 --launch-type FARGATE ...
 
-# Manual image deploy (CI OIDC is broken — use until fixed):
-docker build -f apps/sync/Dockerfile -t lp-sync:latest --platform linux/arm64 .
-docker tag lp-sync:latest 851725317896.dkr.ecr.us-east-1.amazonaws.com/lp-internal/sync:latest
-docker push 851725317896.dkr.ecr.us-east-1.amazonaws.com/lp-internal/sync:latest
-# Same pattern for mcp-server, hq, aws-mcp-server (replace Dockerfile + repo name)
+# Deploy: GitHub Actions builds the image (Buildx) and ships via the lp-github-deploy
+# OIDC role — NO local Docker needed. See .github/workflows/deploy.yml.
+#   - Auto-deploys on push to master (CI-gated; only changed services deploy)
+#   - Manual: gh workflow run deploy.yml -f services=hq   (or all|mcp-server|aws-mcp-server|sync)
+# Task definitions live in infra/ecs/*-taskdef.json; the workflow pins the image to the commit SHA.
 
 # Database tools
 pnpm db:studio                  # open Prisma Studio
 pnpm db:migrate                 # deploy pending migrations (production)
 pnpm --filter @lp-ai/lib-db migrate:dev  # create new migration file (dev)
-pnpm db:down                    # stop Docker Postgres
-
-# Production Docker images (run from repo root)
-docker build -f apps/hq/Dockerfile -t lp-hq:dev .
-docker build -f apps/mcp-server/Dockerfile -t lp-mcp:dev .
-docker build -f apps/aws-mcp-server/Dockerfile -t lp-aws-mcp:dev .
-docker build -f apps/sync/Dockerfile -t lp-sync:dev .
+pnpm db:down                    # stop the local Postgres container
 ```
 
 ## Architecture

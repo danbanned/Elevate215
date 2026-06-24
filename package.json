@@ -15,6 +15,7 @@
     "sync:bigquery": "pnpm --filter @lp-ai/connector-bigquery sync",
     "sync:givebutter": "pnpm --filter @lp-ai/connector-givebutter sync",
     "sync:aplos": "pnpm --filter @lp-ai/connector-aplos sync",
+    "sync:notion": "pnpm --filter @lp-ai/connector-notion sync",
     "sync:slack": "pnpm --filter @lp-ai/connector-slack sync",
     "sync:roam": "pnpm --filter @lp-ai/connector-roam sync",
     "sync:all": "pnpm --filter \"@lp-ai/connector-*\" --parallel sync",

@@ -2,7 +2,9 @@ import NextAuth from 'next-auth';
 import authConfig from './auth.config';
 import { NextResponse } from 'next/server';
 
-const PUBLIC_PATHS = ['/auth/signin', '/api/auth', '/api/health'];
+// '/api/notion/meeting-router' is the Notion webhook receiver — Notion calls it
+// unauthenticated, so it's verified by signature inside the route, not by session auth.
+const PUBLIC_PATHS = ['/auth/signin', '/api/auth', '/api/health', '/api/notion/meeting-router'];
 
 const { auth } = NextAuth(authConfig);
 
