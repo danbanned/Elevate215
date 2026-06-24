@@ -8,57 +8,28 @@
 - Phase 1 complete — ECR repositories created, `lp-ecs-task-role` and `lp-ecs-execution-role` exist
 - Phase 8 complete — HQ dashboard builds and passes health check locally
 - Phase 7 complete — MCP server builds and passes health check locally
-- Docker installed locally (`docker --version`), Node 22 + pnpm 10 on the build host
+- GitHub Actions configured with the `lp-github-deploy` OIDC role (it builds and pushes the images — no local Docker needed)
 - A registered domain or subdomain you control DNS for (e.g. `hq.launchpadinc.org`)
 
 ---
 
-## 1. Confirm Dockerfiles are current
+## 1. Images are built & pushed by GitHub Actions
 
-The repo already ships production Dockerfiles for all three apps:
+The repo ships production Dockerfiles for all apps:
 
 - `apps/hq/Dockerfile` — Next.js standalone output, Node 22, healthcheck on `:3000/api/health`
 - `apps/mcp-server/Dockerfile` — Node 22, healthcheck on `:8080/health`
 - `apps/aws-mcp-server/Dockerfile` — Node 22, healthcheck on `:8081/health`
 
-Build and run them once against the local Docker Postgres to confirm — see [docs/runbooks/local-dev.md](../runbooks/local-dev.md) for the exact commands.
+You do **not** build or push these by hand. `.github/workflows/deploy.yml` builds each image with Buildx on a GitHub runner (ARM64 / Graviton) and pushes to ECR via the `lp-github-deploy` OIDC role — automatically on push to `master`, or manually with `gh workflow run deploy.yml -f services=all`.
 
 ---
 
 ## 2. Build and push images to ECR
 
-```bash
-export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-export AWS_REGION=us-east-1
+Handled entirely by GitHub Actions (`.github/workflows/deploy.yml`): Buildx builds each image for `linux/arm64` and pushes it to ECR over the `lp-github-deploy` OIDC role, tagged `:latest` and `:<commit-sha>`. There is no manual build/login/push step.
 
-# Authenticate Docker with ECR
-aws ecr get-login-password --region $AWS_REGION | \
-  docker login --username AWS --password-stdin \
-  $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
-
-# HQ dashboard
-docker build -f apps/hq/Dockerfile -t lp-internal/hq .
-docker tag lp-internal/hq \
-  $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/lp-internal/hq:latest
-docker push \
-  $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/lp-internal/hq:latest
-
-# MCP server
-docker build -f apps/mcp-server/Dockerfile -t lp-internal/mcp-server .
-docker tag lp-internal/mcp-server \
-  $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/lp-internal/mcp-server:latest
-docker push \
-  $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/lp-internal/mcp-server:latest
-
-# AWS MCP server (governance/Terraform job server)
-docker build -f apps/aws-mcp-server/Dockerfile -t lp-internal/aws-mcp-server .
-docker tag lp-internal/aws-mcp-server \
-  $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/lp-internal/aws-mcp-server:latest
-docker push \
-  $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/lp-internal/aws-mcp-server:latest
-```
-
-> **Architecture: ARM64 Graviton.** The task definitions in `infra/ecs/*-taskdef.json` declare `"cpuArchitecture": "ARM64"` so Fargate runs on Graviton (~20% cheaper than X86_64). Apple Silicon builds match prod natively — no `--platform` flag needed. If you build from a Linux x86 host (e.g. a CI runner), add `--platform linux/arm64` to each `docker build`.
+> **Architecture: ARM64 Graviton.** The task definitions in `infra/ecs/*-taskdef.json` declare `"cpuArchitecture": "ARM64"` so Fargate runs on Graviton (~20% cheaper than X86_64); the deploy workflow builds for `linux/arm64` to match.
 
 ---
 
@@ -350,16 +321,7 @@ For production hardening, swap `assignPublicIp=ENABLED` in the service definitio
 
 ## Updating an image (deploy a new version)
 
-```bash
-# 1. Rebuild + push (Step 2)
-# 2. Force a new deployment — same task def, but ECS will pull the latest tag
-aws ecs update-service \
-  --cluster lp-internal \
-  --service lp-internal-hq \
-  --force-new-deployment
-```
-
-For a real release flow, tag images with the git SHA (`:$(git rev-parse --short HEAD)`) and register a new task-definition revision pointing at the new tag — that gives you a clean rollback target.
+Deploys run through GitHub Actions: push to `master`, or run `gh workflow run deploy.yml -f services=hq`. The workflow builds the image, registers a new task-definition revision pinned to the commit SHA (a clean rollback target), force-deploys the ECS service, and waits for stability — no manual build or `aws ecs update-service`.
 
 ---
 

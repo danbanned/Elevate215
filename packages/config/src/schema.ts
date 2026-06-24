@@ -54,6 +54,8 @@ export const envSchema = z.object({
 
   NOTION_API_KEY: optional,
   NOTION_MEETING_TRANSCRIPTS_DB_ID: optional,
+  NOTION_WEBHOOK_SECRET: optional, // verification token for the HQ meeting-router webhook signature
+  NOTION_PEOPLE_DB_ID: optional, // People & Entities database id — for attendee→People linking (query by Email)
 
   AUTH_SECRET: optional,
   AUTH_GOOGLE_ID: optional,

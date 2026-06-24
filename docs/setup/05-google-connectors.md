@@ -1,131 +1,50 @@
 # Phase 5 — Google Connectors (Sheets + Drive)
 
-**Goal:** Set up the Google service account, port both connectors from V0 with Prisma replacing Drizzle at the insert layer, and verify a full sync against RDS.
+**Goal:** Set up Google service-account access, configure the connector environment, run the Sheets and Drive syncs against RDS, and authorize calendar access for the HQ meeting router.
 
 **Prerequisites:**
 - Phase 4 complete — Prisma schema migrated, all tables exist
-- Google Cloud project with the service account used in V0 (`GOOGLE_SERVICE_ACCOUNT_JSON`)
-- All `GOOGLE_SHEETS_*` IDs from V0's `.env.example` (same sheets, same IDs)
+- A Google Cloud project (`lp-internal-ai`) with a service account and JSON key
+- The Google Sheet IDs and Drive folder ID for the data you're ingesting
 
 ---
 
-## 1. Verify the Google service account
+## 1. Service account credentials
 
-The V0 service account should already have access to the relevant Sheets and Drive folder. Verify:
-
-1. Go to [console.cloud.google.com](https://console.cloud.google.com)
-2. Navigate to **IAM & Admin → Service Accounts**
-3. Confirm the service account exists and has a key
-4. If no key exists, create one: **Actions → Manage keys → Add key → JSON** → download
-5. Base64-encode it:
+1. Go to [console.cloud.google.com](https://console.cloud.google.com) → **IAM & Admin → Service Accounts**.
+2. Confirm the service account exists (`lp-internal-ai-os@lp-internal-ai.iam.gserviceaccount.com`) and has a JSON key. If not: **Actions → Manage keys → Add key → JSON** → download.
+3. Base64-encode the key:
 
 ```bash
 base64 -i path/to/service-account.json | tr -d '\n'
 ```
 
-Store this value as `GOOGLE_SERVICE_ACCOUNT_JSON` in `.env` and update `lp-internal/google` in Secrets Manager.
+Store the result as `GOOGLE_SERVICE_ACCOUNT_JSON` in `.env`, and mirror it to `lp-internal/google` in AWS Secrets Manager for production.
 
 ---
 
-## 2. Scaffold the connectors
+## 2. Grant the service account access
 
-```bash
-# Google Sheets connector
-mkdir -p "/Users/christian/Documents/Claude/Projects/LP Internal AI V1/connectors/google-sheets/src"
+Notion integrations and Google APIs are both deny-by-default — the service account only sees resources explicitly shared with it.
 
-# Google Drive connector
-mkdir -p "/Users/christian/Documents/Claude/Projects/LP Internal AI V1/connectors/google-drive/src"
-```
-
-Both connectors follow the same package structure. Example for google-sheets:
-
-**`connectors/google-sheets/package.json`:**
-```json
-{
-  "name": "@lp-ai/connector-google-sheets",
-  "version": "1.0.0",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "sync": "node --env-file=../../.env dist/index.js",
-    "build": "tsc",
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@lp-ai/lib-db": "workspace:*",
-    "@lp-ai/lib-config": "workspace:*",
-    "googleapis": "^140.0.0",
-    "zod": "^3.23.0"
-  },
-  "devDependencies": {
-    "typescript": "^5.4.5"
-  }
-}
-```
+- **Each Google Sheet:** open the sheet → **Share** → add the service account email with **Viewer** access. Repeat for every spreadsheet listed in your `GOOGLE_SHEETS_*` env vars.
+- **Drive folder:** give the service account **Viewer** access on the Drive docs folder (`GOOGLE_DRIVE_FOLDER_ID`).
 
 ---
 
-## 3. Port the Sheets connector from V0
+## 3. Configure environment variables
 
-The parse logic (tab-by-tab row transformations) is copied unchanged from V0. Only the insert layer changes: `db.insert(table).values(rows)` → `prisma.modelName.upsert(...)`.
+Set the resource IDs the connectors read. The full list is in `packages/config/src/schema.ts`; the Google ones are:
 
-**Key files to port from V0** (copy then adapt):
-- `connectors/google-sheets/src/sync-students.ts`
-- `connectors/google-sheets/src/sync-enrollment.ts`
-- `connectors/google-sheets/src/sync-development-crm.ts`
-- `connectors/google-sheets/src/sync-attendance.ts`
-- `connectors/google-sheets/src/sync-student-competency.ts`
-- `connectors/google-sheets/src/sync-phase-dashboard.ts`
+- `GOOGLE_SERVICE_ACCOUNT_JSON` — base64 key from step 1
+- `GOOGLE_DRIVE_FOLDER_ID` — Drive docs folder
+- `GOOGLE_SHEETS_*` — one ID per source spreadsheet (Dashboard, Outcomes, attendance cohorts, finance workbook, etc.)
 
-**Pattern change (Drizzle → Prisma):**
-
-V0 (Drizzle):
-```typescript
-await db.insert(students).values(rows).onConflictDoUpdate({
-  target: students.canonicalName,
-  set: { updatedAt: new Date() }
-});
-```
-
-V1 (Prisma):
-```typescript
-for (const row of rows) {
-  await prisma.student.upsert({
-    where: { canonicalName: row.canonicalName },
-    update: { ...row, updatedAt: new Date() },
-    create: row,
-  });
-}
-```
+Only the IDs you set are synced; an unset sheet is skipped.
 
 ---
 
-## 4. Port the Drive connector from V0
-
-The chunking logic is unchanged. Changes:
-- Replace Drizzle insert → Prisma upsert on `document_chunks`
-- Replace Voyage AI embedding call → OpenAI embedding call (see Phase 6 for the embedding package)
-
-For now, implement the Drive connector without embeddings (store content only) and add embeddings after Phase 6 completes.
-
-**`connectors/google-drive/src/sync-drive.ts`** — key pattern:
-
-```typescript
-await prisma.documentChunk.upsert({
-  where: { sourceId: chunk.driveFileId + '_' + chunk.chunkIndex },
-  update: { content: chunk.content, syncedAt: new Date() },
-  create: {
-    source: 'google-drive',
-    sourceId: chunk.driveFileId + '_' + chunk.chunkIndex,
-    title: chunk.title,
-    content: chunk.content,
-  },
-});
-```
-
----
-
-## 5. Run the Sheets sync
+## 4. Run the Sheets sync
 
 ```bash
 cd "/Users/christian/Documents/Claude/Projects/LP Internal AI V1"
@@ -133,7 +52,7 @@ pnpm --filter @lp-ai/connector-google-sheets build
 pnpm sync:sheets
 ```
 
-Expected output: row counts per tab (students, enrollment, certifications, etc.)
+Expected output: per-tab row counts (students, enrollment, certifications, attendance, competency, donors, …).
 
 Spot-check in Prisma Studio:
 
@@ -141,37 +60,81 @@ Spot-check in Prisma Studio:
 pnpm db:studio
 ```
 
-Navigate to `students` table — confirm rows match what's in the Google Sheet.
+Open the `students` table and confirm rows match the source Google Sheet.
 
 ---
 
-## 6. Run the Drive sync
+## 5. Run the Drive sync
 
 ```bash
 pnpm --filter @lp-ai/connector-google-drive build
 pnpm sync:drive
 ```
 
-Expected output: file count + chunk count written to `document_chunks`.
+The Drive connector writes chunked document content (and, once embeddings are configured in Phase 6, vector embeddings) into `document_chunks` with `source = 'google-drive'`. It is currently a skeleton — wire up the implementation before relying on its output.
+
+---
+
+## 6. Calendar access for the meeting router (domain-wide delegation)
+
+The HQ meeting router (`apps/hq/app/api/notion/meeting-router`) enriches each recorded
+meeting with calendar context: it reads the **organizer** of the meeting's Google
+Calendar event (to set the `Track`) and the **attendees** (to link them to People &
+Entities). It does this by having the service account **impersonate the user who
+recorded the meeting** and read that user's calendar — standard domain-wide delegation
+(DWD). This is an **org-wide, one-time admin setup with no per-user action**.
+
+### One-time setup (Google Workspace admin)
+
+1. **Authorize the service account for domain-wide delegation:**
+   Google Workspace Admin console → **Security → Access and data control → API controls
+   → Domain-wide delegation → Add new**:
+   - **Client ID:** `116086895776038458504`
+     (service account `lp-internal-ai-os@lp-internal-ai.iam.gserviceaccount.com`)
+   - **OAuth scopes:** `https://www.googleapis.com/auth/calendar.readonly`
+2. **Enable the Calendar API** in the Google Cloud project `lp-internal-ai`:
+   APIs & Services → Library → **Google Calendar API** → Enable.
+   (Hosting is on AWS, but Google API auth always runs through a Google Cloud project.)
+
+No per-user step is required; new employees are covered automatically.
+
+### Related env vars
+
+| Var | Purpose |
+|---|---|
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Service account key (from step 1; reused for calendar) |
+| `NOTION_MEETING_TRANSCRIPTS_DB_ID` | The unified Meetings DB the router writes to |
+| `NOTION_PEOPLE_DB_ID` | People & Entities DB (attendee→People linking, query by Email) |
+| `NOTION_WEBHOOK_SECRET` | Notion webhook signature verification token |
+
+### How it works at runtime
+
+Recording lands in the Meetings DB (via Notion AI Meeting Notes) → Notion webhook hits
+the router → router impersonates `note.created_by`, lists events ±2h around the note's
+timestamp, matches the event, and writes back `Track` (from organizer), `Attendees`
+(matched People) + `Attendee Emails` (raw, lossless), and `Calendar Event ID`.
+`Visibility` is left unset on purpose (the ingest connector fail-closes on missing
+visibility, so transcripts aren't searchable until a human tags them).
 
 ---
 
 ## Verification checklist
 
+- [ ] `GOOGLE_SERVICE_ACCOUNT_JSON` set in `.env` and `lp-internal/google` secret
+- [ ] Service account shared (Viewer) on every source Sheet and the Drive folder
 - [ ] `pnpm sync:sheets` completes without errors
-- [ ] `students` table in Prisma Studio shows real student records
-- [ ] `attendance_records`, `student_competencies`, `enrollment_snapshots` populated
-- [ ] `donor_contacts`, `donor_gifts` populated from Development CRM sheet
+- [ ] `students`, `attendance_records`, `student_competencies`, `enrollment_snapshots` populated in Prisma Studio
+- [ ] `donor_contacts`, `donor_gifts` populated from the Development CRM sheet
 - [ ] `pnpm sync:drive` completes without errors
-- [ ] `document_chunks` table shows rows with `source = 'google-drive'`
+- [ ] (When the meeting router is in use) DWD authorized + Calendar API enabled
 
 ---
 
 ## Known pitfalls
 
-- **403 on Sheets API** — service account must be shared on each Google Sheet explicitly (open sheet → Share → paste service account email)
-- **Drive folder access** — service account must have Viewer access on the Drive folder
-- **Upsert key conflicts** — ensure upsert `where` clauses use a stable unique key (canonical name for students, not auto-generated ID)
+- **403 on Sheets API** — the service account must be shared on each Google Sheet explicitly (open sheet → Share → paste the service account email).
+- **Drive folder access** — the service account must have Viewer access on the Drive folder.
+- **Upsert key conflicts** — every sync upserts on a stable natural key (e.g. canonical name for students), never an auto-generated row ID. See the sync-safety rule in `CLAUDE.md`.
 
 ---
 

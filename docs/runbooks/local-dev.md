@@ -112,30 +112,9 @@ curl http://localhost:3000/api/health
 psql "$DATABASE_URL" -c "SELECT tool_name, duration_ms, called_at FROM usage_logs ORDER BY called_at DESC LIMIT 5;"
 ```
 
-## Docker images
+## Building & deploying the app images
 
-Production-shaped images are buildable today:
-```bash
-docker build -f apps/hq/Dockerfile -t lp-hq:dev .
-docker build -f apps/mcp-server/Dockerfile -t lp-mcp:dev .
-docker build -f apps/aws-mcp-server/Dockerfile -t lp-aws-mcp:dev .
-docker build -f apps/sync/Dockerfile -t lp-sync:dev .
-```
-
-Run them against the same Docker Postgres:
-```bash
-docker run --rm -p 3001:3000 \
-  --network lpinternalaiv1_default \
-  -e DATABASE_URL=postgresql://lpapp:lpapp@lp-internal-postgres:5432/lpinternal?sslmode=disable \
-  -e AUTH_SECRET=local-dev-secret-not-for-production-use-only \
-  -e AUTH_TRUST_HOST=true \
-  lp-hq:dev
-
-docker run --rm -p 8091:8080 \
-  --network lpinternalaiv1_default \
-  -e DATABASE_URL=postgresql://lpapp:lpapp@lp-internal-postgres:5432/lpinternal?sslmode=disable \
-  lp-mcp:dev
-```
+Production images are built and deployed by **GitHub Actions** (`.github/workflows/deploy.yml`) — auto on push to `master`, or manually with `gh workflow run deploy.yml -f services=hq`. You do not build or push images by hand for local development; `pnpm dev` runs the apps directly against the local Postgres.
 
 ## Common operations
 

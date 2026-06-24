@@ -24,7 +24,7 @@ What credentials to request, from whom, and what each one unlocks. Suggested gat
 
 1. **AWS IAM access (#1)**
    - Unlocks: RDS Postgres, ECS deploy, Secrets Manager, EventBridge scheduling, S3 + Athena.
-   - Even basic AWS access lets us deploy the Docker images already built locally (`apps/hq/Dockerfile`, `apps/mcp-server/Dockerfile`) and move secrets out of the local `.env`.
+   - Even basic AWS access lets GitHub Actions build and deploy the app images to ECS, and lets us move secrets out of the local `.env` into Secrets Manager.
    - Request: an IAM user (or SSO role) with permissions for RDS, ECS, Secrets Manager, EventBridge, S3, IAM (for ECS task role creation). Phase 1 setup guide ([docs/setup/01-aws-baseline.md](../setup/01-aws-baseline.md)) has the policy template.
 
 2. **OpenAI API key (#2)**
