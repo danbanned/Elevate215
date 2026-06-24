@@ -6,13 +6,12 @@ The same person appears differently across every data source:
 
 | Source | How a student might appear |
 |---|---|
-| BigQuery (attendance) | Student ID `S1042`, full name `Maria Garcia` |
-| BigQuery (Beacon) | Student ID `S1042` |
+| Google Sheets | Student ID `S1042`, full name `Maria Garcia` |
 | Google Drive | `Maria G.`, `Maria Garcia`, student ID in a column |
 | Slack | `@maria.g`, display name `Maria 🌟` |
 | Notion (meeting transcripts) | `Maria`, `Maria Garcia`, `the student we discussed` |
 
-Without resolution, MCP tools can't answer "What's Maria's attendance?" when given a Slack handle — they don't know `@maria.g` maps to student ID `S1042`.
+Without resolution, MCP tools can't answer "What's Maria's attendance?" when given a Slack handle — they don't know `@maria.g` maps to student number `LP0042`.
 
 ## Solution: Canonical Entity Table + Alias Graph
 
@@ -22,7 +21,7 @@ Every student and staff member has one canonical record in `students` or `staff`
 entity_aliases
   source: 'slack',    alias: '@maria.g'       → students.id = uuid-A
   source: 'drive',    alias: 'Maria G.'       → students.id = uuid-A
-  source: 'bigquery', alias: 'S1042'          → students.id = uuid-A
+  source: 'sheets',   alias: 'LP0042'          → students.id = uuid-A
   source: 'drive',    alias: 'Maria Garcia'   → students.id = uuid-A
 ```
 

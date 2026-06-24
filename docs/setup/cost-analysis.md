@@ -51,13 +51,11 @@ Sync connectors run as one-off Fargate tasks triggered by EventBridge → Lambda
 | Connector | CPU | Memory | Schedule | Est. duration | Runs/mo |
 |---|---|---|---|---|---:|
 | Google Sheets | 0.5 vCPU | 1 GB | Every 1 hour | ~3 min | 720 |
-| GiveButter | 0.5 vCPU | 1 GB | Daily 3:00 UTC | ~2 min | 30 |
 | Aplos | 0.25 vCPU | 0.5 GB | Daily 3:30 UTC | ~1 min | 30 |
 | Google Drive | 0.5 vCPU | 1 GB | Every 6 hours | ~2 min | 120 |
 
 Fargate bills per-second with a 1-minute minimum. Estimated total compute:
 - Google Sheets: 720 runs × 3 min = 36 hrs at 0.5 vCPU / 1 GB
-- GiveButter: 30 × 2 min = 1 hr at 0.5 vCPU / 1 GB
 - Aplos: 30 × 1 min = 0.5 hr at 0.25 vCPU / 0.5 GB
 - Google Drive: 120 × 2 min = 4 hrs at 0.5 vCPU / 1 GB
 
@@ -98,7 +96,7 @@ One internet-facing ALB with host-based routing to three target groups:
 
 ### 5. Secrets Manager
 
-11 secrets under `lp-internal/` prefix:
+9 secrets under `lp-internal/` prefix:
 
 | Secret | Contents |
 |---|---|
@@ -107,14 +105,12 @@ One internet-facing ALB with host-based routing to three target groups:
 | `lp-internal/openai` | OPENAI_API_KEY |
 | `lp-internal/google` | Service account JSON + 16 Sheet IDs |
 | `lp-internal/nextauth` | AUTH_SECRET, Google OAuth client ID/secret |
-| `lp-internal/givebutter` | GIVEBUTTER_API_KEY |
 | `lp-internal/aplos` | APLOS_CLIENT_ID, APLOS_API_KEY |
 | `lp-internal/slack` | SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET |
-| `lp-internal/roam` | ROAM_API_KEY, ROAM_GRAPH_NAME |
 | `lp-internal/sync` | SYNC_SECRET |
 | `lp-internal/sentry` | SENTRY_DSN_HQ, SENTRY_DSN_MCP |
 
-**Cost:** 11 × $0.40 = **$4.40/mo**
+**Cost:** 9 × $0.40 = **$3.60/mo**
 
 ### 6. ECR
 
@@ -156,7 +152,6 @@ These are consumed by the application but billed outside AWS.
 | Anthropic Claude (consumer of MCP tools) | Team usage via Claude.ai / API | Varies by plan |
 | Sentry | Error monitoring (free tier likely sufficient) | $0 |
 | Google Workspace | Service account API calls (Sheets, Drive) | $0 (included) |
-| GiveButter API | REST reads | $0 (included in platform) |
 | Aplos API | REST reads | $0 (included in platform) |
 
 ---

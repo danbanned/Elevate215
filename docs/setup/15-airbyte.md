@@ -10,7 +10,7 @@
 
 ## 1. Why Airbyte
 
-Airbyte is the default ingestion tool for pulling from supported SaaS systems (Salesforce, HubSpot, Jira, etc.) into Postgres or a data warehouse. The custom connectors in this repo (GiveButter, Aplos, Slack, Roam) are built by hand because Airbyte doesn't have native connectors for these. Airbyte becomes valuable when a client uses a mainstream SaaS that Airbyte already supports.
+Airbyte is the default ingestion tool for pulling from supported SaaS systems (Salesforce, HubSpot, Jira, etc.) into Postgres or a data warehouse. The custom connectors in this repo (Aplos, Slack) are built by hand because Airbyte doesn't have native connectors for these. Airbyte becomes valuable when a client uses a mainstream SaaS that Airbyte already supports.
 
 For V1 (Launchpad internal), Airbyte is not used yet. This phase sets up the infrastructure so it's ready.
 
@@ -82,7 +82,7 @@ Add the LP Internal RDS as a destination:
 | Schema changes frequently | Schema is stable and well-understood |
 | Client manages the source system | You control the data shape |
 
-Current connectors that should stay custom: GiveButter, Aplos, Slack, Roam, BigQuery.
+Current connectors that should stay custom: Aplos, Slack.
 
 ---
 
@@ -112,4 +112,4 @@ Return to this guide and build your first pipeline when:
 
 ---
 
-**Next:** [16-givebutter-connector.md](16-givebutter-connector.md)
+**Next:** [17-aplos-connector.md](17-aplos-connector.md)

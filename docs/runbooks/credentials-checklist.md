@@ -10,15 +10,13 @@ What credentials to request, from whom, and what each one unlocks. Suggested gat
 | 2 | `OPENAI_API_KEY` | OpenAI billing-account owner | Embedding generation; `search_documents`, `search_conversations`, `search_by_person` MCP tools | Other 13 MCP tools work without it |
 | 3 | `ANTHROPIC_API_KEY` | Anthropic billing-account owner | Only needed for systems that *call* Claude directly. The MCP server is *called by* Claude (via Claude Desktop or claude.ai), so MCP itself does not need this key. | n/a |
 | 4 | Google OAuth client (`AUTH_GOOGLE_ID` + `AUTH_GOOGLE_SECRET`) | Google Workspace admin (launchpadphilly.org) | HQ dashboard sign-in | Disable middleware locally to view pages without auth |
-| 5 | Google service account (`GOOGLE_SERVICE_ACCOUNT_JSON`) + Sheet IDs + Drive folder ID | Google Workspace admin | `google-sheets`, `google-drive`, `bigquery` connectors | Seed script provides sample data |
-| 6 | `GIVEBUTTER_API_KEY` | Launchpad GiveButter account owner | `givebutter` connector (real REST client already implemented) | Seed includes 2 sample donors |
-| 7 | `APLOS_CLIENT_ID` + `APLOS_API_KEY` | Launchpad Aplos account owner | `aplos` connector + `get_finance_brief` + `query_finances` Aplos sections | ✅ Live — 16K+ records (accounts, funds, transactions) |
-| 8 | `SLACK_BOT_TOKEN` + `SLACK_SIGNING_SECRET` | Launchpad Slack admin | `slack` connector + `search_conversations` Slack source | Drive-only `search_conversations` until Slack lands |
-| 9 | `ROAM_API_KEY` + `ROAM_GRAPH_NAME` | Roam workspace owner | `roam` connector | n/a |
-| 10 | `NOTION_API_KEY` + `NOTION_MEETING_TRANSCRIPTS_DB_ID` | Notion workspace admin | `notion` connector — meeting transcripts → pgvector | n/a |
-| 11 | `SENTRY_DSN_HQ` + `SENTRY_DSN_MCP` | Sentry workspace owner | Production error monitoring | Local errors print to stderr |
-| 12 | `SYNC_SECRET` | Generated; share between EventBridge + the ECS MCP service | Bearer auth on the MCP server's `/mcp` HTTP endpoint | Endpoint is unauthed when unset |
-| 13 | MCP OAuth (`MCP_OAUTH_ISSUER`, `JWT_PRIVATE_KEY`, `JWT_KID`) | Generated during Phase 23 setup | MCP OAuth 2.0 PKCE flow for tool-level access control | Tools accessible without OAuth when unset |
+| 5 | Google service account (`GOOGLE_SERVICE_ACCOUNT_JSON`) + Sheet IDs + Drive folder ID | Google Workspace admin | `google-sheets`, `google-drive` connectors | Seed script provides sample data |
+| 6 | `APLOS_CLIENT_ID` + `APLOS_API_KEY` | Launchpad Aplos account owner | `aplos` connector + `get_finance_brief` + `query_finances` Aplos sections | ✅ Live — 16K+ records (accounts, funds, transactions) |
+| 7 | `SLACK_BOT_TOKEN` + `SLACK_SIGNING_SECRET` | Launchpad Slack admin | `slack` connector + `search_conversations` Slack source | Drive-only `search_conversations` until Slack lands |
+| 8 | `NOTION_API_KEY` + `NOTION_MEETING_TRANSCRIPTS_DB_ID` | Notion workspace admin | `notion` connector — meeting transcripts → pgvector | n/a |
+| 9 | `SENTRY_DSN_HQ` + `SENTRY_DSN_MCP` | Sentry workspace owner | Production error monitoring | Local errors print to stderr |
+| 10 | `SYNC_SECRET` | Generated; share between EventBridge + the ECS MCP service | Bearer auth on the MCP server's `/mcp` HTTP endpoint | Endpoint is unauthed when unset |
+| 11 | MCP OAuth (`MCP_OAUTH_ISSUER`, `JWT_PRIVATE_KEY`, `JWT_KID`) | Generated during Phase 23 setup | MCP OAuth 2.0 PKCE flow for tool-level access control | Tools accessible without OAuth when unset |
 
 ## Recommended order
 
@@ -37,17 +35,15 @@ What credentials to request, from whom, and what each one unlocks. Suggested gat
 
 **Tier 2 — light-up connectors**
 
-3. **GiveButter API key (#6)** — REST client is fully implemented; this is the fastest connector to bring online.
-4. **Aplos credentials (#7)** — ✅ live; connector syncs accounts, funds, and transactions into `finance_snapshots`.
-5. **Slack bot token (#8)** — required for `search_conversations` to actually search Slack.
-6. **Google service account (#5)** — the heaviest setup because it requires Google Workspace admin to create a service account, share Sheet/Drive permissions, and gather all the sheet IDs. Worth doing in one batch.
-7. **Roam API key (#9)** — small footprint; Roam is the lightest connector.
+3. **Aplos credentials (#6)** — ✅ live; connector syncs accounts, funds, and transactions into `finance_snapshots`.
+4. **Slack bot token (#7)** — required for `search_conversations` to actually search Slack.
+5. **Google service account (#5)** — the heaviest setup because it requires Google Workspace admin to create a service account, share Sheet/Drive permissions, and gather all the sheet IDs. Worth doing in one batch.
 
 **Tier 3 — auth + observability**
 
-8. **Google OAuth client (#4)** — needed once you want to share the HQ dashboard with the team rather than running it locally.
-9. **Sentry DSNs (#10)** — production-only; not strictly required until ECS deploy.
-10. **`SYNC_SECRET` (#11)** — generate with `openssl rand -base64 32` once we have ECS + EventBridge.
+6. **Google OAuth client (#4)** — needed once you want to share the HQ dashboard with the team rather than running it locally.
+7. **Sentry DSNs (#9)** — production-only; not strictly required until ECS deploy.
+8. **`SYNC_SECRET` (#10)** — generate with `openssl rand -base64 32` once we have ECS + EventBridge.
 
 ## What's safe to share with admins
 
@@ -71,10 +67,8 @@ All credentials are added to `.env` locally (which is gitignored) and to AWS Sec
 | `ANTHROPIC_API_KEY` | `.env` (optional) | Secrets Manager `lp-internal/anthropic` |
 | `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` / `AUTH_SECRET` | `.env` | Secrets Manager `lp-internal/nextauth` |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` + sheet IDs | `.env` | Secrets Manager `lp-internal/google` |
-| `GIVEBUTTER_API_KEY` | `.env` | Secrets Manager `lp-internal/givebutter` |
 | `APLOS_CLIENT_ID` / `APLOS_API_KEY` | `.env` | Secrets Manager `lp-internal/aplos` |
 | `SLACK_BOT_TOKEN` / `SLACK_SIGNING_SECRET` | `.env` | Secrets Manager `lp-internal/slack` |
-| `ROAM_API_KEY` / `ROAM_GRAPH_NAME` | `.env` | Secrets Manager `lp-internal/roam` |
 | `NOTION_API_KEY` / `NOTION_MEETING_TRANSCRIPTS_DB_ID` | `.env` | Secrets Manager `lp-internal/notion` |
 | `SENTRY_DSN_HQ` / `SENTRY_DSN_MCP` | `.env` | Secrets Manager `lp-internal/sentry` |
 | `SYNC_SECRET` | `.env` | Secrets Manager `lp-internal/sync` |
@@ -84,5 +78,5 @@ Once `USE_AWS_SECRETS=true` in production, `packages/config` fetches all of thes
 
 ## Pending docs to write once we have credentials
 
-- A "first sync" runbook for each connector (commands, what to expect in logs, how to verify rows landed in Postgres) — currently only the GiveButter pattern exists, in `connectors/givebutter/src/index.ts`.
+- A "first sync" runbook for each connector (commands, what to expect in logs, how to verify rows landed in Postgres).
 - Production deployment runbook for ECS once Phase 9 begins (see docs/setup/09-ecs-express-mode.md).

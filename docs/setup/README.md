@@ -34,11 +34,8 @@ Status legend: ✅ Complete · 🟡 Built (awaiting credential to activate) · �
 | 13 | n8n workflow automation (self-hosted) | [13-n8n.md](13-n8n.md) | 🔲 Pending | |
 | 14 | Metabase BI dashboards (self-hosted) | [14-metabase.md](14-metabase.md) | 🔲 Pending | |
 | 15 | Airbyte ingestion tooling (self-hosted) | [15-airbyte.md](15-airbyte.md) | 🔲 Pending | |
-| 16 | GiveButter connector | [16-givebutter-connector.md](16-givebutter-connector.md) | ✅ Complete | REST client live; syncing donors, gifts, pipeline |
 | 17 | Aplos connector | [17-aplos-connector.md](17-aplos-connector.md) | ✅ Complete | RSA-decryption auth; 16K+ records synced |
 | 18 | Slack connector | [18-slack-connector.md](18-slack-connector.md) | 🟡 Scaffold | Awaiting `SLACK_BOT_TOKEN` |
-| 19 | Roam connector | [19-roam-connector.md](19-roam-connector.md) | 🟡 Scaffold | Awaiting `ROAM_API_KEY` |
-| 20 | BigQuery connector (source pull) | [20-bigquery-connector.md](20-bigquery-connector.md) | 🟡 Scaffold | Creds available; implementation pending |
 | 21 | Athena over S3 (analytics warehouse) | [21-athena-s3.md](21-athena-s3.md) | 🔲 Pending | |
 | 22 | Anthropic Admin API usage connector | [22-anthropic-usage-connector.md](22-anthropic-usage-connector.md) | 🔲 Pending | Populates token usage in HQ home page |
 

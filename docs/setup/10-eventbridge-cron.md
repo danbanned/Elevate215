@@ -161,16 +161,6 @@ aws events put-targets \
   --rule lp-sync-google-drive \
   --targets "[{\"Id\":\"1\",\"Arn\":\"${LAMBDA_ARN}\",\"Input\":\"{\\\"connector\\\":\\\"google-drive\\\",\\\"syncUrl\\\":\\\"${MCP_URL}\\\"}\"}]"
 
-# GiveButter — daily at 3am UTC
-aws events put-rule \
-  --name lp-sync-givebutter \
-  --schedule-expression "cron(0 3 * * ? *)" \
-  --state ENABLED
-
-aws events put-targets \
-  --rule lp-sync-givebutter \
-  --targets "[{\"Id\":\"1\",\"Arn\":\"${LAMBDA_ARN}\",\"Input\":\"{\\\"connector\\\":\\\"givebutter\\\",\\\"syncUrl\\\":\\\"${MCP_URL}\\\"}\"}]"
-
 # Aplos — daily at 3:30am UTC
 aws events put-rule \
   --name lp-sync-aplos \
@@ -182,7 +172,7 @@ aws events put-targets \
   --targets "[{\"Id\":\"1\",\"Arn\":\"${LAMBDA_ARN}\",\"Input\":\"{\\\"connector\\\":\\\"aplos\\\",\\\"syncUrl\\\":\\\"${MCP_URL}\\\"}\"}]"
 ```
 
-Repeat the pattern for Slack, Roam, and BigQuery connectors once those are built.
+Repeat the pattern for the Slack connector once it is built.
 
 ---
 

@@ -66,7 +66,7 @@ These clients bring their own infrastructure and expect us to consume it, not cr
 
 **What they want from us:**
 - The policies in `infra/iam/` adapted to their conventions: `kms:KeyArn` conditions referencing their specific CMK (not the broad `kms:ViaService` pattern), `aws:ResourceTag/Application: lp-internal` conditions on S3 and CloudWatch statements for blast-radius scoping.
-- An **egress inventory**: every external host the app contacts (OpenAI, Anthropic, GiveButter, Aplos, Slack, Notion, Google APIs, Sentry). Their egress firewall needs to allowlist these.
+- An **egress inventory**: every external host the app contacts (OpenAI, Anthropic, Aplos, Slack, Notion, Google APIs, Sentry). Their egress firewall needs to allowlist these.
 - An **incident playbook**: who to call, what to watch, how to roll back.
 - Infrastructure delivered as Terraform modules, not CLI scripts.
 
@@ -85,7 +85,7 @@ This is the right path when the client has AWS infrastructure and an ops person 
 **How it works:**
 
 1. We provide the client a **secrets contract** — the exact Secrets Manager paths and key names the application expects (see table below).
-2. The client's team provisions each credential from the source system (GiveButter admin panel, Google Workspace admin, Aplos account settings, etc.) and writes it directly into Secrets Manager under the `lp-internal/*` prefix.
+2. The client's team provisions each credential from the source system (Google Workspace admin, Aplos account settings, etc.) and writes it directly into Secrets Manager under the `lp-internal/*` prefix.
 3. The implementation team **never sees the credentials**. We see only whether the secret exists and whether the app can read it successfully at startup.
 4. For secrets we generate (AUTH_SECRET, JWT keys, SYNC_SECRET), we generate them, write them to Secrets Manager, and provide the client the Secrets Manager paths so they can access them if needed for rotation or disaster recovery.
 
@@ -99,11 +99,9 @@ This is the right path when the client has AWS infrastructure and an ops person 
 | `lp-internal/google` | `GOOGLE_SERVICE_ACCOUNT_JSON` | Client Workspace admin | Client |
 | `lp-internal/openai` | `OPENAI_API_KEY` | Client's OpenAI org | Client |
 | `lp-internal/anthropic` | `ANTHROPIC_API_KEY` | Client's Anthropic org | Client |
-| `lp-internal/givebutter` | `GIVEBUTTER_API_KEY` | Client's GiveButter admin | Client |
 | `lp-internal/aplos` | `APLOS_CLIENT_ID`, `APLOS_API_KEY` | Client's Aplos admin | Client |
 | `lp-internal/slack` | `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET` | Client's Slack admin | Client |
 | `lp-internal/notion` | `NOTION_API_KEY` | Client's Notion admin | Client |
-| `lp-internal/roam` | `ROAM_API_KEY`, `ROAM_GRAPH_NAME` | Client's Roam admin | Client |
 | `lp-internal/sentry` | `SENTRY_DSN_HQ`, `SENTRY_DSN_MCP` | Client's Sentry project | Client |
 | `lp-internal/nextauth` | `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` | OAuth setup + client GCP | Both |
 | `lp-internal/jwt-signing` | `JWT_PRIVATE_KEY`, `JWT_KID` | Generated during setup | Implementation team |
@@ -128,7 +126,7 @@ The client creates a shared vault in their password manager (1Password, Bitwarde
 1. **Client creates the vault.** Name it something obvious: `Internal AI — Credentials`. Invite the implementation team's designated contact(s) — not the whole team, just whoever is wiring secrets into infrastructure.
 2. **Client adds credentials as they're provisioned.** Each entry should include:
    - The credential itself (API key, JSON key file, connection string, etc.)
-   - Which service it's for (e.g., "GiveButter API Key — read-only")
+   - Which service it's for (e.g., "Aplos API Key — read-only")
    - Who issued it and when
    - Expiration or rotation schedule if applicable
    - Any scope restrictions ("read-only", "scoped to lp-internal-* datasets", etc.)
@@ -162,20 +160,18 @@ Regardless of which path is used for initial provisioning, the rotation process 
 
 ---
 
-## 2. Google Workspace (Sheets + Drive + BigQuery)
+## 2. Google Workspace (Sheets + Drive)
 
 ### What the client already has
 
 - Workspace tenant with strict admin controls. SecOps owns service account creation.
-- A separate GCP project for analytics (`mycompany-analytics`) where BigQuery datasets live.
 - A Shared Drive structure with team OUs. Document sharing is audited.
 
 ### What the client will grant us
 
 - **One service account** they create. They provision the JSON key directly into Secrets Manager (Option A above) or deliver it via the shared password manager vault (Option B) — never email, never Slack.
-- **Scopes restricted at creation**: `drive.readonly`, `spreadsheets.readonly`, `bigquery.dataViewer`, `bigquery.jobUser`. No `bigquery.admin`. No write scopes anywhere.
+- **Scopes restricted at creation**: `drive.readonly`, `spreadsheets.readonly`. No write scopes anywhere.
 - **Surgical access**: the service account is added as a member to a *specific* Shared Drive folder we'll work from, not domain-wide. Same for the specific Sheets — added per-file. If a sheet isn't in the explicit allowlist, we can't read it.
-- **BigQuery**: dataset-level IAM, not project-level. We read `analytics.lp_internal_*` views. If we need new fields, the client's data engineering team adds them; we don't create tables.
 
 ### What the client wants from us
 
@@ -186,7 +182,6 @@ Regardless of which path is used for initial provisioning, the rotation process 
 ### How the existing setup docs change
 
 - **Phase 5 (Google connectors):** rip out the "create your own service account" parts. Replace with "consume the SA JSON the security team provides." Add a section on key rotation. Add a section on what to do when a Sheet ID changes.
-- **Phase 20 (BigQuery):** no project creation. Consume `mycompany-analytics:lp_internal_views.*`. Document the dataset schema we depend on.
 
 ---
 
@@ -237,33 +232,27 @@ Regardless of which path is used for initial provisioning, the rotation process 
 
 ---
 
-## 5. GiveButter & Aplos
+## 5. Aplos
 
-These are easier — the client is the customer of both. They own those accounts.
+The client is the customer of Aplos. They own that account.
 
 ### What the client will grant us
 
-- A dedicated API key in each, generated by their finance ops team, with the narrowest available scope. For GiveButter that's a read-only token; for Aplos it's whatever the Aplos roles allow on their read-only side.
-- The RSA decryption flow we already implemented for Aplos (per memory `aplos_connector_live.md`) is fine — keep the private key in Secrets Manager, not the repo.
+- A dedicated API key, generated by their finance ops team, with the narrowest available scope — whatever the Aplos roles allow on their read-only side.
+- The RSA decryption flow we already implemented for Aplos is fine — keep the private key in Secrets Manager, not the repo.
 
 ### What the client wants from us
 
-- A clear note in the runbook for when GiveButter or Aplos rotates keys: who pages whom, how long the sync can be down before it's an incident.
-- Specifically for Aplos: capture the `--security-revert` flag gotcha in `docs/runbooks/connector-aplos.md`, not in private memory the client can't see.
+- A clear note in the runbook for when Aplos rotates keys: who pages whom, how long the sync can be down before it's an incident.
+- Capture the `--security-revert` flag gotcha in `docs/runbooks/connector-aplos.md`, not in private memory the client can't see.
 
 ### How the existing setup docs change
 
-Minimal — Phases 16 and 17 already assume the client owns the accounts. Add the rotation runbook.
+Minimal — Phase 17 already assumes the client owns the account. Add the rotation runbook.
 
 ---
 
-## 6. Roam
-
-Small enough that this is the most negotiable. The client provisions an API key from their Roam org and gives it to us. Same secrets handoff. No structural change to Phase 19.
-
----
-
-## 7. OpenAI + Anthropic (LLM and embedding billing)
+## 6. OpenAI + Anthropic (LLM and embedding billing)
 
 This one the client pushes back on hard.
 
@@ -289,7 +278,7 @@ This one the client pushes back on hard.
 
 ---
 
-## 8. Sentry
+## 7. Sentry
 
 ### What the client already has
 
@@ -303,13 +292,13 @@ This one the client pushes back on hard.
 ### What the client wants from us
 
 - Use `release` tagging so they can correlate errors to deploys.
-- Filter out noisy errors (rate limits from GiveButter, expected 404s from missing Roam records) at the SDK level — they're watching error-budget burn rate, and our noise pollutes it.
+- Filter out noisy errors (rate limits from Aplos, expected 404s) at the SDK level — they're watching error-budget burn rate, and our noise pollutes it.
 
 No structural change to Phase 11, just a "consume, don't create" reframing.
 
 ---
 
-## 9. Self-hosted services: n8n, Metabase, Airbyte
+## 8. Self-hosted services: n8n, Metabase, Airbyte
 
 This is the conditional one — depends on whether the client already has them.
 
@@ -319,7 +308,7 @@ This is the conditional one — depends on whether the client already has them.
 
 ---
 
-## 10. GitHub
+## 9. GitHub
 
 ### What the client already has
 
@@ -340,7 +329,7 @@ This is the conditional one — depends on whether the client already has them.
 
 ---
 
-## 11. The handover shape
+## 10. The handover shape
 
 What the client wants at the end of the engagement, in order of importance:
 
@@ -354,7 +343,7 @@ What the client does *not* want: a doc that says "first, create an IAM user with
 
 ---
 
-## 12. Concrete shifts to plan for now
+## 11. Concrete shifts to plan for now
 
 Three things to start working on before any rewriting of the existing phase guides:
 
@@ -364,7 +353,7 @@ Three things to start working on before any rewriting of the existing phase guid
 
 ---
 
-## 13. Likely friction points
+## 12. Likely friction points
 
 When this strategy meets a real client conversation, three places consistently cause pushback:
 

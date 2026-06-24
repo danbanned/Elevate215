@@ -114,7 +114,7 @@ Indexes: `tab_name`, `period`.
 
 #### `donor_contacts`
 
-Donor contact records from GiveButter + Development CRM. Key columns: `id` (UUID PK), `givebutter_contact_id`, `first_name`, `last_name`, `email`, `phone`, `organization_name`, `synced_at`.
+Donor contact records from the Development CRM. Key columns: `id` (UUID PK), `givebutter_contact_id`, `first_name`, `last_name`, `email`, `phone`, `organization_name`, `synced_at`.
 
 Relations: `gifts` (DonorGift[]), `pipeline` (DonorPipeline[]).
 
@@ -122,7 +122,7 @@ Index: `organization_name`.
 
 #### `donor_gifts`
 
-Individual gift records. Key columns: `id` (UUID PK), `donor_contact_id` (FK → donor_contacts), `givebutter_tx_id`, `amount` (Float), `gift_date`, `campaign_name`, `fund`, `is_recurring`.
+Individual gift records. Key columns: `id` (UUID PK), `donor_contact_id` (FK → donor_contacts), `givebutter_tx_id` (legacy, may be null), `amount` (Float), `gift_date`, `campaign_name`, `fund`, `is_recurring`.
 
 #### `donor_pipeline`
 

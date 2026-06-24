@@ -50,7 +50,7 @@ Trivial but required: `sts:GetCallerIdentity`. Included in nearly every managed 
 
 ### 2.4 Secrets Manager (Phase 3)
 
-**Why:** production secrets for `DATABASE_URL`, all connector API keys (GiveButter, Aplos, Slack, Roam, OpenAI, Anthropic), NextAuth secrets, Sentry DSN. `@lp-ai/lib-config` already has the fetch path stubbed.
+**Why:** production secrets for `DATABASE_URL`, all connector API keys (Aplos, Slack, OpenAI, Anthropic), NextAuth secrets, Sentry DSN. `@lp-ai/lib-config` already has the fetch path stubbed.
 
 **Builder grants:** `SecretsManagerReadWrite` (managed) — create/update/tag/rotate.
 
@@ -84,7 +84,7 @@ Trivial but required: `sts:GetCallerIdentity`. Included in nearly every managed 
 
 ### 2.7 EventBridge — cron scheduling (Phase 10)
 
-**Why:** schedules the seven connector syncs (`sync:sheets`, `sync:drive`, `sync:bigquery`, `sync:givebutter`, `sync:aplos`, `sync:slack`, `sync:roam`).
+**Why:** schedules the connector syncs (`sync:sheets`, `sync:drive`, `sync:aplos`, `sync:slack`).
 
 **Builder grants:** `AmazonEventBridgeFullAccess` (managed) — `events:PutRule`, `events:PutTargets`, `scheduler:CreateSchedule`.
 

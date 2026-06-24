@@ -58,10 +58,10 @@ All 16 tools are registered. Tool names and descriptions must remain **identical
 | `query_finances` | `tools/query-finances.ts` | `finance_snapshots` |
 | `query_donors` | `tools/query-donors.ts` | `donor_contacts`, `donor_gifts`, `donor_pipeline` |
 | `query_attendance` | `tools/query-attendance.ts` | `attendance_records` |
-| `search_conversations` | `tools/search-conversations.ts` | `document_chunks` (source = slack/roam) |
+| `search_conversations` | `tools/search-conversations.ts` | `document_chunks` (source = slack/notion) |
 | `search_by_person` | `tools/search-by-person.ts` | `entity_aliases` → multiple |
 | `get_entity_brief` | `tools/get-entity-brief.ts` | multiple |
-| `get_finance_brief` | `tools/get-finance-brief.ts` | `finance_snapshots`, `donor_gifts` |
+| `get_finance_brief` | `tools/get-finance-brief.ts` | `finance_snapshots` |
 | `search_documents` | **new** | `document_chunks` (pgvector) |
 
 ---
