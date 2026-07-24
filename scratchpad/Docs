@@ -1,0 +1,43 @@
+# docs/
+
+Documentation for the entire LP Internal AI system. Organized into setup guides, connector specs, runbooks, user guides, and architecture references.
+
+## Subfolders
+
+### setup/ — Infrastructure Setup Guides (14 guides)
+Step-by-step setup for each phase of the AWS stack, numbered 00–23:
+- `00-bootstrap.md` — monorepo, git, pnpm
+- `01-aws-baseline.md` — AWS account + IAM
+- `02-rds-postgres.md` — RDS Postgres + pgvector
+- `03-secrets-manager.md` — AWS Secrets Manager
+- `04-prisma-schema.md` — 30-model schema design
+- `05-google-connectors.md` — Sheets + Drive syncs
+- `06-embeddings-pgvector.md` — OpenAI embeddings + vector search
+- `07-mcp-server.md` — MCP stdio + HTTP transport
+- `08-hq-dashboard.md` — Next.js + NextAuth
+- `09-ecs-express-mode.md` — ECS Fargate deployment
+- `10-eventbridge-cron.md` — Scheduled syncs
+- `11-sentry.md` — Error monitoring
+- `12-notion.md` — Notion connector
+- `README.md` — index with ✅/🟡/🔲 status per phase
+
+### data-sources/ — Connector Architecture (5 guides)
+One spec per connector: schema, auth method, tables written, error handling.
+- `google-sheets-connector.md`, `google-drive-connector.md`, `notion-connector.md`, `aplos-connector.md`, `slack-connector.md`
+
+### runbooks/ — Operational Procedures (3 guides)
+- `local-dev.md` — Docker Compose + `.env` setup for local development
+- `credentials-checklist.md` — Every API key: what it unlocks and how to get it
+- `aws-permissions.md` — IAM policy matrix for developer/deployer/service roles
+
+### user-guides/ — End-User & Developer Docs (2 guides)
+- `using-the-mcp-server.md` — Connecting via Claude.ai, Desktop, or Code; tool discovery; rate limits; example queries
+- `developing-tools-and-hq.md` — Adding new MCP tools; Prisma query patterns; testing
+
+### Root-level Architecture Docs
+- `database-schema.md` — All 30 Postgres tables with columns, indexes, and foreign keys
+- `entity-resolution.md` — How students/staff are matched across sources (exact → fuzzy → pending)
+- `mcp-server-spec.md` — All 16 tool definitions with input/output schemas and rate limits
+
+### reference/v0-migrations/ — Legacy SQL
+Pre-Prisma migration files kept for historical reference.
