@@ -13,6 +13,7 @@ const SECRET_GROUPS = [
   'notion',
   'slack',
   'roam',
+  'quickbooks',
   'sync',
   'sentry',
 ] as const;

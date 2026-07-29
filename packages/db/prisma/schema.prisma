@@ -476,6 +476,24 @@ model VerificationToken {
   @@map("verification_tokens")
 }
 
+// Third-party connector OAuth credentials (access/refresh token + expiry),
+// keyed by connector + the connector's own account identifier (e.g. QuickBooks
+// realmId). Distinct from `Account` (NextAuth, HQ sign-in) and the MCP OAuth
+// tables below (Claude/MCP client access) — this is us authenticating outward
+// to a third-party API on behalf of a connector.
+model ConnectorCredential {
+  id                String   @id @default(uuid())
+  connector         String
+  externalAccountId String   @map("external_account_id")
+  accessToken       String   @map("access_token")
+  refreshToken      String   @map("refresh_token")
+  expiresAt         DateTime @map("expires_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@unique([connector, externalAccountId])
+  @@map("connector_credentials")
+}
+
 model AwsResourceJob {
   id           String   @id @default(uuid())
   developer    String   @map("developer")

@@ -50,6 +50,9 @@ export const envSchema = z.object({
   SLACK_SIGNING_SECRET: optional,
   ROAM_API_KEY: optional,
   ROAM_GRAPH_NAME: optional,
+  QUICKBOOKS_CLIENT_ID: optional,
+  QUICKBOOKS_CLIENT_SECRET: optional,
+  QUICKBOOKS_REDIRECT_URI: optional,
 
   NOTION_API_KEY: optional,
   NOTION_MEETING_TRANSCRIPTS_DB_ID: optional,

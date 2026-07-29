@@ -299,53 +299,7 @@ Retrieve a student's structured profile.
 
 ### `search_conversations`
 
-Semantic search across Slack messages and Notion meeting transcripts.
 
-**Description shown to Claude:**
-> Search Slack messages and Notion meeting transcripts for content relevant to a query. Returns the most semantically similar passages. Use this tool when asked about team discussions, decisions, or anything said in Slack or meetings.
-
-**Input Schema:**
-```json
-{
-  "type": "object",
-  "properties": {
-    "query": {
-      "type": "string",
-      "description": "Natural language search query."
-    },
-    "sources": {
-      "type": "array",
-      "items": { "type": "string", "enum": ["slack", "notion"] },
-      "description": "Optional: limit to specific source(s). Searches both by default."
-    },
-    "top_k": {
-      "type": "integer",
-      "description": "Number of results to return. Default 8, max 20.",
-      "default": 8
-    }
-  },
-  "required": ["query"]
-}
-```
-
-**Output Schema:**
-```json
-{
-  "results": [
-    {
-      "source": "slack",
-      "channel": "general",
-      "author": "Jane Smith",
-      "timestamp": "2024-03-15T14:22:00Z",
-      "content": "...relevant passage...",
-      "score": 0.92
-    }
-  ],
-  "query": "spring showcase planning"
-}
-```
-
-Only results with `score >= 0.75` are returned.
 
 ---
 
