@@ -7,7 +7,7 @@ import { runTool, parseStr } from '../tool-helpers.js';
 const NAME = 'get_finance_brief';
 
 const DESCRIPTION =
-  'Get a high-level financial overview of the organization: Aplos fund balances, chart-of-accounts summary, recent Aplos transactions, and recent donor gifts. Use this as a starting point for any general finance question.';
+  'Get a high-level financial overview of the organization: fund balances, chart-of-accounts summary, and recent transactions. Use this as a starting point for any general finance question.';
 
 const inputSchema = {
   period: z
@@ -22,7 +22,7 @@ export function registerGetFinanceBrief(server: McpServer): void {
       const raw = input as Record<string, unknown>;
       const period = parseStr(raw, 'period') ?? 'ytd';
 
-      const [aplosFunds, aplosAccounts, recentTransactions, sheetFundBalances, recentGifts] = await Promise.all([
+      const [aplosFunds, aplosAccounts, recentTransactions] = await Promise.all([
         prisma.financeSnapshot.findMany({
           where: { tabName: 'aplos:funds' },
           orderBy: { period: 'desc' },
@@ -36,16 +36,6 @@ export function registerGetFinanceBrief(server: McpServer): void {
           where: { tabName: 'aplos:transactions' },
           orderBy: { period: 'desc' },
           take: 20,
-        }),
-        prisma.financeSnapshot.findMany({
-          where: { tabName: 'fund_balances' },
-          orderBy: { period: 'desc' },
-          take: 50,
-        }),
-        prisma.donorGift.findMany({
-          orderBy: { giftDate: 'desc' },
-          take: 10,
-          include: { donorContact: true },
         }),
       ]);
 
@@ -68,20 +58,7 @@ export function registerGetFinanceBrief(server: McpServer): void {
           }, {}),
         },
         recent_transactions: recentTransactions.map(mapSnapshot),
-        sheet_fund_balances: sheetFundBalances.map(mapSnapshot),
-        recent_gifts: recentGifts.map((g) => ({
-          amount: g.amount,
-          gift_date: g.giftDate,
-          campaign_name: g.campaignName,
-          fund: g.fund,
-          donor:
-            g.donorContact?.organizationName ??
-            ([g.donorContact?.firstName, g.donorContact?.lastName]
-              .filter(Boolean)
-              .join(' ') ||
-              null),
-        })),
-        sources_active: ['aplos', 'google_sheets'],
+        sources_active: ['aplos'],
       };
     }),
   );

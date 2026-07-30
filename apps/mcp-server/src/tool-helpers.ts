@@ -20,20 +20,7 @@ export function getCurrentCallerEmail(): string | null {
 // This scopes the blast radius if the secret leaks — skill tools and
 // write-capable tools are excluded.
 const SERVICE_ALLOWED_TOOLS = new Set([
-  'get_student_info',
-  'query_students',
-  'query_outcomes',
-  'query_enrollment',
-  'query_certifications',
-  'query_competency',
   'query_finances',
-  'query_donors',
-  'query_attendance',
-  'query_employment',
-  'query_postsecondary',
-  'search_conversations',
-  'search_by_person',
-  'get_entity_brief',
   'get_finance_brief',
   'search_documents',
 ]);

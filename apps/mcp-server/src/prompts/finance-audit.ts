@@ -6,16 +6,15 @@ const NAME = 'finance_audit_readiness';
 
 const DESCRIPTION =
   'Generate multi-view financial reports and audit-ready documentation. ' +
-  'Produces the same dollars reported three ways (by fund, by funder, by function), ' +
+  'Produces the same dollars reported multiple ways (by fund, by function), ' +
   'reconciliation checks, restricted fund tracking, and board-ready financial summaries. ' +
-  'Supports monthly close, audit prep, funder-specific financial reports, and ad-hoc queries.';
+  'Supports monthly close, audit prep, board financials, fund reconciliation, and ad-hoc queries.';
 
 export const financeAuditArgsSchema = {
   report_type: z
     .enum([
       'monthly_close',
       'audit_prep',
-      'funder_report',
       'board_financials',
       'fund_reconciliation',
       'custom_query',
@@ -24,7 +23,6 @@ export const financeAuditArgsSchema = {
       'Type of financial report. ' +
       '"monthly_close" — month-end summary with fund balances, income/expense, variances. ' +
       '"audit_prep" — comprehensive audit package: trial balance, restricted funds, transaction support. ' +
-      '"funder_report" — how a specific funder\'s dollars were spent. ' +
       '"board_financials" — board-ready financial summary with narrative. ' +
       '"fund_reconciliation" — reconcile fund balances across sources. ' +
       '"custom_query" — answer a specific financial question.',
@@ -36,10 +34,6 @@ export const financeAuditArgsSchema = {
       'Reporting period. Examples: "June 2026", "Q3 2026", "FY2025", "YTD", ' +
       '"last 12 months", "January 2026 - March 2026". Defaults to YTD.',
     ),
-  funder_name: z
-    .string()
-    .optional()
-    .describe('For funder_report: which funder to report on. Will pull their giving history and map spend against it.'),
   fund_name: z
     .string()
     .optional()
@@ -61,7 +55,6 @@ export const financeAuditArgsSchema = {
 interface PromptArgs {
   report_type: string;
   period?: string | undefined;
-  funder_name?: string | undefined;
   fund_name?: string | undefined;
   custom_question?: string | undefined;
   comparison_period?: string | undefined;
@@ -99,9 +92,6 @@ You have access to the organization's live financial data through MCP tools. You
     case 'audit_prep':
       reportInstructions = buildAuditPrep(period);
       break;
-    case 'funder_report':
-      reportInstructions = buildFunderReport(period, args.funder_name);
-      break;
     case 'board_financials':
       reportInstructions = buildBoardFinancials(period, comparison);
       break;
@@ -119,7 +109,6 @@ You have access to the organization's live financial data through MCP tools. You
 
 **Period:** ${period}
 ${comparison ? `**Comparison:** ${comparison}` : ''}
-${args.funder_name ? `**Funder:** ${args.funder_name}` : ''}
 ${args.fund_name ? `**Fund:** ${args.fund_name}` : ''}
 ${args.custom_question ? `**Question:** ${args.custom_question}` : ''}
 ${extraClause}
@@ -132,36 +121,14 @@ Call these MCP tools to collect the raw financial data. Make parallel calls wher
 
 ### Core financial data (always pull):
 
-- \`get_finance_brief\` — fund balances, recent gifts, revenue snapshot
-- \`query_finances\` with query_type "ytd" — year-to-date income and expenses
-- \`query_finances\` with query_type "fund_balances" — current fund balances by fund
-- \`query_finances\` with query_type "budget_actuals" — budget vs. actual performance
-- \`query_finances\` with query_type "monthly" — monthly breakdown for trend analysis
-
-### Revenue & giving data:
-
-- \`query_donors\` with query_type "summary" — total donor count, lifetime giving
-- \`query_finances\` with query_type "dev_giving_history" — giving history from Development CRM
-- \`query_finances\` with query_type "dev_grants_tracker" — active grants and their status
-${args.funder_name ? `- \`query_donors\` with query_type "profile" and donor_name "${args.funder_name}" — this funder's specific giving history and pipeline` : ''}
-
-### Program cost data:
-
-- \`query_finances\` with query_type "phase_budget_summary" — budget by program phase
-- \`query_finances\` with query_type "phase_actuals_2025" — actual spending by phase (2025)
-- \`query_finances\` with query_type "q3_2026_actuals" — Q3 2026 actuals if applicable
-- \`query_enrollment\` with query_type "total" — total students (for cost-per-student)
-- \`query_enrollment\` with query_type "by_phase" — enrollment by phase (for per-phase cost-per-student)
-
-### Stipend & direct cost data:
-
-- \`query_finances\` with query_type "rapid_stipends" — Rapid stipend disbursements
-- \`query_finances\` with query_type "pex_stipends" — PEX card stipend disbursements
+- \`get_finance_brief\` — fund balances, chart-of-accounts summary, recent transactions
+- \`query_finances\` with query_type "aplos_funds" — fund balances
+- \`query_finances\` with query_type "aplos_accounts" — chart of accounts
+- \`query_finances\` with query_type "aplos_transactions" — transaction detail
 
 ### Prior period data (if comparison requested):
 
-${comparison ? `- \`query_finances\` with query_type "prior_month" — prior month data for comparison
-- Make additional calls with date filters matching "${comparison}" for variance analysis` : '- No comparison period specified — skip prior period pulls unless needed for context'}
+${comparison ? `- Repeat the core pulls above with a \`period\` filter matching "${comparison}" for variance analysis` : '- No comparison period specified — skip prior period pulls unless needed for context'}
 
 ---
 
@@ -198,10 +165,9 @@ Category,${period},Budget,Variance,Variance %
    - Dates in YYYY-MM-DD format
 
 4. **Produce one CSV block per logical table.** Typical outputs by report type:
-   - **monthly_close:** income_statement.csv, fund_balances.csv, budget_vs_actual_by_phase.csv, key_metrics.csv
-   - **audit_prep:** revenue_by_fund.csv, revenue_by_funder.csv, functional_expenses.csv, restricted_funds.csv, large_transactions.csv, reconciliation_flags.csv
-   - **funder_report:** grant_budget_vs_actual.csv, outcomes_delivered.csv, cost_per_outcome.csv
-   - **board_financials:** financial_snapshot.csv, program_investment.csv, fundraising_pipeline.csv
+   - **monthly_close:** income_statement.csv, fund_balances.csv, key_metrics.csv
+   - **audit_prep:** revenue_by_fund.csv, functional_expenses.csv, restricted_funds.csv, large_transactions.csv, reconciliation_flags.csv
+   - **board_financials:** financial_snapshot.csv
    - **fund_reconciliation:** balance_comparison.csv, restricted_fund_status.csv, recommended_journal_entries.csv
    - **custom_query:** query_results.csv
 
@@ -246,19 +212,14 @@ Rows: Revenue line items (Grants & Contributions, Government Contracts, Earned R
 Columns: Fund Name, Restriction Type, Opening Balance, Inflows, Outflows, Closing Balance, Spend-Down Deadline, Status
 Flag restricted funds approaching their spend-down deadline with Status = "AT RISK".
 
-**4. Budget vs. Actual by Program Phase** → \`budget_vs_actual_by_phase.csv\`
+**4. Cash Position** → include as rows in \`key_metrics.csv\`
 
-Columns: Phase, Budget, Actual Spent, Remaining, Budget Burn %, Year Elapsed %, Variance Flag
-Include Foundations, 101, Lightspeed, LiftOff, and a TOTAL row. Variance Flag = "OVER" or "UNDER" for >10% variance.
-
-**5. Cash Position** → include as rows in \`key_metrics.csv\`
-
-**6. Key Metrics** → \`key_metrics.csv\`
+**5. Key Metrics** → \`key_metrics.csv\`
 
 Columns: Metric, Value, Benchmark, Status
-Rows: Cost Per Student (total), Cost Per Student by phase (one row each), Revenue Per Student, Program Expense Ratio (target >80%), Cash On Hand, Months of Runway, Accounts Receivable.
+Rows: Program Expense Ratio (target >80%), Cash On Hand, Months of Runway, Accounts Receivable.
 
-**7. Action Items** → include in \`flags.csv\`
+**6. Action Items** → include in \`flags.csv\`
 
 Flag items requiring attention: overdue receivables, funds running low, budget variances >10%.`;
 }
@@ -273,19 +234,15 @@ This package helps the finance team prepare for the annual audit. Organize every
 **1. Financial Summary**
 High-level income statement and balance sheet data for ${period}.
 
-**2. Revenue by Source — Three Views**
+**2. Revenue by Source — Two Views**
 
-Auditors need revenue classified three ways. Produce each:
+Auditors need revenue classified multiple ways. Produce each:
 
 **View A: By Fund (restriction)** → \`revenue_by_fund.csv\`
 
 Columns: Fund, Revenue, Expenses, Net, Restriction Type, Restriction Status, Expiration Date
 
-**View B: By Funder** → \`revenue_by_funder.csv\`
-
-Columns: Funder, Awarded, Received, Spent, Remaining, Report Due Date
-
-**View C: By Function (GAAP functional expense allocation)** → \`functional_expenses.csv\`
+**View B: By Function (GAAP functional expense allocation)** → \`functional_expenses.csv\`
 
 Columns: Expense Category, Program, Management & General, Fundraising, Total
 Rows: Salaries & Benefits, Professional Services, Occupancy, Technology, Stipends, Travel, Other, TOTAL
@@ -320,54 +277,6 @@ List anything the auditors will ask for that isn't in the data:
 - [ ] [Other items flagged as DATA UNAVAILABLE]`;
 }
 
-function buildFunderReport(period: string, funderName: string | undefined): string {
-  const funder = funderName ?? '[FUNDER NAME NEEDED — specify funder_name]';
-  return `## Step 2: Produce Funder Financial Report
-
-Generate a financial report showing how **${funder}**'s dollars were spent during ${period}.
-
-### Additional Data Gathering
-
-If you haven't already:
-- \`query_donors\` with query_type "profile" and donor_name "${funder}" — full giving history, pipeline
-- \`search_documents\` with query: "${funder}" — find the original grant agreement, budget, or reporting template
-- \`query_finances\` with query_type "dev_grants_tracker" — this funder's grant status
-
-### Report Structure:
-
-**1. Grant Summary** → \`grant_summary.csv\`
-
-Columns: Field, Value
-Rows: Funder, Grant Period, Award Amount, Amount Received, Amount Spent, Remaining
-
-**2. Budget vs. Actual** → \`grant_budget_vs_actual.csv\`
-
-Columns: Budget Category, Budgeted, Actual, Variance, Variance %, Notes
-Include a TOTAL row. If the original budget categories are not in the data, use standard categories and add a row: "NOTE","Original grant budget categories not found in data — using standard categories. Verify against award letter."
-
-**3. Program Outcomes Delivered**
-Pull outcomes data to show what this funding achieved:
-- \`query_enrollment\` — students served during the grant period
-- \`query_certifications\` with date filters — certifications earned
-- \`query_employment\` with date filters — employment outcomes
-- \`query_attendance\` — engagement metrics
-
-Present as: "With ${funder}'s support, [X] students [achieved Y]..."
-
-**4. Cost-Per-Outcome Metrics**
-- Cost per student served: grant amount / students served
-- Cost per certification: grant amount / certifications earned
-- Cost per job placement: grant amount / students employed
-
-**5. Narrative Summary**
-2-3 paragraphs summarizing how the funding was used and what it achieved. Use real numbers from the data. This can feed directly into the grant_writing skill for a full report.
-
-**6. Flags & Notes**
-- Any budget categories significantly over/under
-- Any unspent funds and plan for use
-- Upcoming reporting deadlines for this funder`;
-}
-
 function buildBoardFinancials(period: string, comparison: string): string {
   return `## Step 2: Produce Board-Ready Financial Summary
 
@@ -378,38 +287,25 @@ Board members need a clear, concise financial picture — not an accounting dump
 **1. Financial Health Dashboard** → \`financial_snapshot.csv\`
 
 Columns: Metric, Current Value, ${comparison || 'Budget'}, Trend
-Rows: Revenue, Expenses, Net, Cash On Hand, Months of Runway, Program Expense Ratio (target >80%), Fundraising Efficiency, Active Grants (count), Active Grants (total committed), Donor Count.
+Rows: Revenue, Expenses, Net, Cash On Hand, Months of Runway, Program Expense Ratio (target >80%).
 Trend column: Up / Down / Flat.
 
 **2. Revenue Story** (2-3 paragraphs)
-Where money came from. Trends. Any notable gifts or grants. Pipeline outlook. Written in plain language, not accounting jargon.
+Where money came from. Trends. Written in plain language, not accounting jargon.
 
 **3. Expense Story** (2-3 paragraphs)
-Where money went. Program costs by phase. Any significant variances from budget and why. Staffing costs if significant.
+Where money went. Any significant variances from budget and why. Staffing costs if significant.
 
-**4. Program Investment Summary** → \`program_investment.csv\`
-
-Columns: Program Phase, Enrolled, Cost, Cost Per Student, Key Outcome Metric, Outcome Value
-Rows: Foundations, 101, Lightspeed, LiftOff, TOTAL.
-
-**5. Fundraising Pipeline**
-- Grants pending: $__ across __ applications
-- Grants in pipeline (prospect stage): $__
-- Renewal opportunities: $__
-- Donor retention rate: __% [if available]
-
-**6. Items Requiring Board Attention**
+**4. Items Requiring Board Attention**
 Bullet list of anything that needs a board decision or awareness:
 - Budget variances >15%
 - Restricted funds at risk
 - Cash flow concerns
-- Major grant decisions upcoming
 
-**7. Trend Charts** (describe for the user to create)
+**5. Trend Charts** (describe for the user to create)
 Suggest 2-3 visualizations:
 - Monthly revenue vs. expenses (12-month trend)
-- Fund balance trajectory
-- Program expense ratio over time`;
+- Fund balance trajectory`;
 }
 
 function buildFundReconciliation(period: string, fundName: string | undefined): string {
@@ -421,17 +317,15 @@ Reconcile **${fund}** across all data sources for ${period}.
 ### Additional Data Gathering
 
 Pull every financial data source available:
-- \`query_finances\` with query_type "fund_balances" — current balances
-- \`query_finances\` with query_type "ytd" — YTD activity
-- \`query_finances\` with query_type "dev_giving_history" — giving records
-- \`query_finances\` with query_type "dev_grants_tracker" — grant tracking
+- \`query_finances\` with query_type "aplos_funds" — current balances
+- \`query_finances\` with query_type "aplos_transactions" — activity for the period
 - \`get_finance_brief\` — summary view
 
 ### Reconciliation Report:
 
 **1. Balance Comparison** → \`balance_comparison.csv\`
 
-Columns: Line Item, Finance Sheet, Aplos, Dev CRM, Variance
+Columns: Line Item, Aplos, Other Source, Variance
 Rows: Opening Balance, + Revenue/Inflows, - Expenses/Outflows, = Closing Balance
 
 **2. Variance Analysis**

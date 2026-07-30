@@ -9,17 +9,14 @@ WORKDIR /workspace
 
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY tsconfig.base.json eslint.config.mjs ./
-COPY apps/aws-mcp-server/package.json apps/aws-mcp-server/package.json
 COPY apps/hq/package.json apps/hq/package.json
 COPY apps/mcp-server/package.json apps/mcp-server/package.json
 COPY packages/config/package.json packages/config/package.json
 COPY packages/db/package.json packages/db/package.json
 COPY packages/embedding/package.json packages/embedding/package.json
 COPY connectors/aplos/package.json connectors/aplos/package.json
-COPY connectors/google-drive/package.json connectors/google-drive/package.json
 COPY connectors/google-sheets/package.json connectors/google-sheets/package.json
-COPY connectors/notion/package.json connectors/notion/package.json
-COPY connectors/slack/package.json connectors/slack/package.json
+COPY connectors/quickbooks/package.json connectors/quickbooks/package.json
 
 RUN pnpm install --frozen-lockfile
 
@@ -37,6 +34,7 @@ RUN DATABASE_URL="postgresql://placeholder" pnpm --filter @lp-ai/lib-db generate
 RUN pnpm --filter @lp-ai/lib-config build
 RUN pnpm --filter @lp-ai/lib-db build
 RUN pnpm --filter @lp-ai/lib-embedding build
+RUN pnpm --filter @lp-ai/connector-quickbooks build
 # Next.js calls fs.stat() on .env during build for change tracking and
 # crashes if missing. The host's .env is excluded via .dockerignore (correct —
 # it holds secrets), so create an empty stub here. This file does not reach

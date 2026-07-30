@@ -14,7 +14,6 @@ on:
           - all
           - mcp-server
           - hq
-          - aws-mcp-server
           - sync
 
 permissions:
@@ -40,7 +39,6 @@ jobs:
     outputs:
       mcp-server: ${{ steps.detect.outputs.mcp-server }}
       hq: ${{ steps.detect.outputs.hq }}
-      aws-mcp-server: ${{ steps.detect.outputs.aws-mcp-server }}
       sync: ${{ steps.detect.outputs.sync }}
     steps:
       - uses: actions/checkout@v4
@@ -55,7 +53,6 @@ jobs:
             if [[ "$INPUT" == "all" ]]; then
               echo "mcp-server=true" >> "$GITHUB_OUTPUT"
               echo "hq=true" >> "$GITHUB_OUTPUT"
-              echo "aws-mcp-server=true" >> "$GITHUB_OUTPUT"
               echo "sync=true" >> "$GITHUB_OUTPUT"
             else
               for svc in $(echo "$INPUT" | tr ',' ' '); do
@@ -79,9 +76,6 @@ jobs:
           if [[ "$SHARED" == "true" ]] || echo "$CHANGED" | grep -qE '^apps/hq/'; then
             echo "hq=true" >> "$GITHUB_OUTPUT"
           fi
-          if [[ "$SHARED" == "true" ]] || echo "$CHANGED" | grep -qE '^apps/aws-mcp-server/'; then
-            echo "aws-mcp-server=true" >> "$GITHUB_OUTPUT"
-          fi
           if [[ "$SHARED" == "true" ]] || echo "$CHANGED" | grep -qE '^(apps/sync/|connectors/)'; then
             echo "sync=true" >> "$GITHUB_OUTPUT"
           fi
@@ -91,7 +85,7 @@ jobs:
   # the GitHub Actions runner cannot reach RDS (private subnet).
   migrate:
     needs: [changes]
-    if: always() && (needs.changes.outputs.mcp-server == 'true' || needs.changes.outputs.hq == 'true' || needs.changes.outputs.aws-mcp-server == 'true')
+    if: always() && (needs.changes.outputs.mcp-server == 'true' || needs.changes.outputs.hq == 'true')
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -294,72 +288,6 @@ jobs:
           aws ecs wait services-stable \
             --cluster ${{ env.ECS_CLUSTER }} \
             --services lp-internal-hq
-
-  # ─── Deploy AWS MCP Server ─────────────────────────────────────
-  deploy-aws-mcp-server:
-    needs: [changes, migrate]
-    if: always() && needs.changes.result == 'success' && needs.migrate.result == 'success' && needs.changes.outputs.aws-mcp-server == 'true'
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/lp-github-deploy
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to ECR
-        id: ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: apps/aws-mcp-server/Dockerfile
-          push: true
-          platforms: linux/arm64
-          tags: |
-            ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lp-internal/aws-mcp-server:latest
-            ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lp-internal/aws-mcp-server:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Register task definition
-        id: taskdef
-        run: |
-          sed "s/\${AWS_ACCOUNT_ID}/${{ env.AWS_ACCOUNT_ID }}/g" \
-            infra/ecs/aws-mcp-server-taskdef.json > /tmp/taskdef.json
-
-          jq --arg img "${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lp-internal/aws-mcp-server:${{ github.sha }}" \
-            '.containerDefinitions[0].image = $img' /tmp/taskdef.json > /tmp/taskdef-final.json
-
-          ARN=$(aws ecs register-task-definition \
-            --cli-input-json file:///tmp/taskdef-final.json \
-            --query 'taskDefinition.taskDefinitionArn' \
-            --output text)
-          echo "arn=$ARN" >> "$GITHUB_OUTPUT"
-          echo "Registered: $ARN"
-
-      - name: Deploy to ECS
-        run: |
-          aws ecs update-service \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --service lp-internal-aws-mcp-server \
-            --task-definition ${{ steps.taskdef.outputs.arn }} \
-            --force-new-deployment
-
-      - name: Wait for stability
-        run: |
-          echo "Waiting for service to stabilize (up to 5 minutes)..."
-          aws ecs wait services-stable \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services lp-internal-aws-mcp-server
 
   # ─── Build Sync Image (no long-running service — used by EventBridge tasks) ─
   deploy-sync:

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
+    "@lp-ai/connector-quickbooks": "workspace:*",
     "@lp-ai/lib-config": "workspace:*",
     "@lp-ai/lib-db": "workspace:*",
     "@sentry/nextjs": "^10.57.0",

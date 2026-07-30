@@ -32,40 +32,19 @@ interface TokenSummary {
 }
 
 async function fetchFreshness(): Promise<SourceFreshness[]> {
-  const [students, info, certifications, competencies, attendance, finance, donors, chunks, outcomes] =
-    await Promise.all([
-      latest('students', 'updated_at'),
-      latest('student_info', 'synced_at'),
-      latest('student_certifications', 'last_synced_at'),
-      latest('student_competencies', 'last_synced_at'),
-      latest('attendance_records', 'last_synced_at'),
-      latest('finance_snapshots', 'last_synced_at'),
-      latest('donor_contacts', 'synced_at'),
-      latest('document_chunks', 'synced_at'),
-      latest('student_phase_outcomes', 'last_synced_at'),
-    ]);
+  const [finance, chunks] = await Promise.all([
+    latest('finance_snapshots', 'last_synced_at'),
+    latest('document_chunks', 'synced_at'),
+  ]);
 
   return [
-    { source: 'Students roster', table: 'students', ...students },
-    { source: 'Phase outcomes', table: 'student_phase_outcomes', ...outcomes },
-    { source: 'Certifications (PCEP)', table: 'student_certifications', ...certifications },
-    { source: 'Competencies', table: 'student_competencies', ...competencies },
-    { source: 'Attendance', table: 'attendance_records', ...attendance },
-    { source: 'Finance (Sheets)', table: 'finance_snapshots', ...finance },
-    { source: 'Drive student notes', table: 'student_info', ...info },
-    { source: 'Donors (B21 CRM)', table: 'donor_contacts', ...donors },
+    { source: 'Finance (Aplos)', table: 'finance_snapshots', ...finance },
     { source: 'Vector chunks', table: 'document_chunks', ...chunks },
   ];
 }
 
-const ALLOWED_TABLES = new Set([
-  'students', 'student_info', 'student_certifications', 'student_competencies',
-  'attendance_records', 'finance_snapshots', 'donor_contacts', 'document_chunks',
-  'student_phase_outcomes',
-]);
-const ALLOWED_COLUMNS = new Set([
-  'updated_at', 'synced_at', 'last_synced_at',
-]);
+const ALLOWED_TABLES = new Set(['finance_snapshots', 'document_chunks']);
+const ALLOWED_COLUMNS = new Set(['synced_at', 'last_synced_at']);
 
 async function latest(
   table: string,

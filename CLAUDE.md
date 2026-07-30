@@ -103,7 +103,7 @@ pnpm db:down                    # stop the local Postgres container
 ### Package graph
 
 ```
-apps/hq              → @lp-ai/lib-db, @lp-ai/lib-config
+apps/hq              → @lp-ai/lib-db, @lp-ai/lib-config, @lp-ai/connector-quickbooks (OAuth connect/callback routes only)
 apps/mcp-server      → @lp-ai/lib-db, @lp-ai/lib-config, @lp-ai/lib-embedding
 apps/aws-mcp-server  → @lp-ai/lib-db, @lp-ai/lib-config
 apps/sync            → connectors/* (one-off Fargate task runner for scheduled syncs)

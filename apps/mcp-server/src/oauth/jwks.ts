@@ -4,8 +4,7 @@
  * Private key comes from env (`JWT_PRIVATE_KEY`, populated from
  * lp-internal/jwt-signing in production). Public key is derived from the
  * private key at startup and exported via /.well-known/jwks.json so resource
- * servers (incl. aws-mcp-server) can verify access tokens without a shared
- * secret.
+ * servers can verify access tokens without a shared secret.
  */
 
 import { importPKCS8, exportJWK, SignJWT, jwtVerify, type JWK, type CryptoKey } from 'jose';
