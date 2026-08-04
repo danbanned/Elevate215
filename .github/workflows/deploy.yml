@@ -2,7 +2,7 @@ name: Deploy
 
 on:
   push:
-    branches: [master]
+    branches: [main, master] # was [master] only — this repo's default branch is `main`; fixed so pushes actually trigger this
   workflow_dispatch:
     inputs:
       services:
@@ -24,6 +24,11 @@ env:
   AWS_REGION: us-east-1
   AWS_ACCOUNT_ID: "851725317896"
   ECS_CLUSTER: lp-internal
+  # apps/hq deploys straight to an EC2 box via SSH + local `docker build` —
+  # NOT ECS/ECR. See deploy-hq below. mcp-server/sync remain on Fargate.
+  EC2_HOST: ec2-54-196-51-180.compute-1.amazonaws.com
+  EC2_USER: ubuntu
+  REMOTE_APP_DIR: /home/ubuntu/app
 
 jobs:
   # ─── Gate: only deploy after CI passes ───────────────────────────
@@ -224,70 +229,60 @@ jobs:
             --services lp-internal-mcp-server
 
   # ─── Deploy HQ Dashboard ───────────────────────────────────────
+  # EC2 + Docker, NOT ECS/Fargate — deliberately not using ECR either: builds
+  # straight on the box over SSH, same commands as the manual fallback used to
+  # bootstrap this (see docs/runbooks — TODO write one). No AWS IAM/OIDC
+  # dependency for this job at all, only the SSH key secret below.
+  #
+  # PREREQUISITE — this job assumes ${{ env.REMOTE_APP_DIR }} already exists on
+  # the box as a git clone of this repo, with a `.env` file already placed at
+  # ${{ env.REMOTE_APP_DIR }}/.env (gitignored, never committed — copied over
+  # by hand once via scp). The very first deploy MUST be done manually to
+  # bootstrap both of those; this job only does `git fetch` + reset after that.
   deploy-hq:
     needs: [changes, migrate]
     if: always() && needs.changes.result == 'success' && needs.migrate.result == 'success' && needs.changes.outputs.hq == 'true'
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Build + deploy on EC2 over SSH
+        uses: appleboy/ssh-action@v1.0.3
         with:
-          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/lp-github-deploy
-          aws-region: ${{ env.AWS_REGION }}
+          host: ${{ env.EC2_HOST }}
+          username: ${{ env.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            cd ${{ env.REMOTE_APP_DIR }}
+            git fetch origin
+            git reset --hard origin/${{ github.ref_name }}
 
-      - name: Login to ECR
-        id: ecr
-        uses: aws-actions/amazon-ecr-login@v2
+            # TODO(christian): QUICKBOOKS_REDIRECT_URI in this box's .env is
+            # still a placeholder pointing at the EC2 hostname — swap it (and
+            # re-register the exact URL in Intuit's Redirect URIs tab) the
+            # moment the real domain is live. AUTH_URL likely needs the same
+            # treatment once NextAuth/Google OAuth creds are configured.
+            docker build -f apps/hq/Dockerfile -t lp-hq:latest .
+            docker rm -f lp-hq || true
+            docker run -d \
+              --name lp-hq \
+              --env-file ${{ env.REMOTE_APP_DIR }}/.env \
+              -p 80:3000 \
+              --restart unless-stopped \
+              lp-hq:latest
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+            sleep 5
+            docker ps --filter name=lp-hq
+            curl -f http://localhost/api/health
 
-      - name: Build and push
-        uses: docker/build-push-action@v6
+      - name: Confirm container is running
+        uses: appleboy/ssh-action@v1.0.3
         with:
-          context: .
-          file: apps/hq/Dockerfile
-          push: true
-          platforms: linux/arm64
-          tags: |
-            ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lp-internal/hq:latest
-            ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lp-internal/hq:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Register task definition
-        id: taskdef
-        run: |
-          sed "s/\${AWS_ACCOUNT_ID}/${{ env.AWS_ACCOUNT_ID }}/g" \
-            infra/ecs/hq-taskdef.json > /tmp/taskdef.json
-
-          jq --arg img "${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/lp-internal/hq:${{ github.sha }}" \
-            '.containerDefinitions[0].image = $img' /tmp/taskdef.json > /tmp/taskdef-final.json
-
-          ARN=$(aws ecs register-task-definition \
-            --cli-input-json file:///tmp/taskdef-final.json \
-            --query 'taskDefinition.taskDefinitionArn' \
-            --output text)
-          echo "arn=$ARN" >> "$GITHUB_OUTPUT"
-          echo "Registered: $ARN"
-
-      - name: Deploy to ECS
-        run: |
-          aws ecs update-service \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --service lp-internal-hq \
-            --task-definition ${{ steps.taskdef.outputs.arn }} \
-            --force-new-deployment
-
-      - name: Wait for stability
-        run: |
-          echo "Waiting for service to stabilize (up to 5 minutes)..."
-          aws ecs wait services-stable \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services lp-internal-hq
+          host: ${{ env.EC2_HOST }}
+          username: ${{ env.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          script: |
+            docker ps --filter name=lp-hq --filter status=running --format '{{.Names}}: {{.Status}}'
 
   # ─── Build Sync Image (no long-running service — used by EventBridge tasks) ─
   deploy-sync:
