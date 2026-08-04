@@ -2,513 +2,57 @@
 
 ## Tool Availability
 
-The server currently exposes **16 tools**, all active — backed by Google Sheets, Aplos, and Notion connectors. Semantic search uses pgvector with OpenAI `text-embedding-3-large` embeddings (1536 dimensions).
+The server currently exposes **5 tools**, all active. Semantic search (`search_documents`) uses pgvector with OpenAI `text-embedding-3-large` embeddings (1536 dimensions), but no live connector currently populates `document_chunks` — the tool works, it just has nothing to search yet.
 
-**Active tools (16):**
-- `get_student_info` — Sheets student roster + Drive student info doc
-- `query_outcomes` — Phase progression from Student Information sheet
-- `query_enrollment` — enrollment statistics by phase, school, cohort, race, date ranges, with full per-student profile filters
-- `query_certifications` — PCEP pass/fail results, scores, by phase
-- `query_students` — population statistics + filtered lists with full demographic, academic, and post-program filter set
-- `query_competency` — per-student competency scores and the rubric structure
-- `query_finances` — Launchpad Dashboard, Phase Budget Dashboard (incl. monthly LiftOff/HS), Phase Actuals 2025 + Q3 2026, Rapid + PEX stipends, **and Building21 Development CRM** (giving history, prospect pipeline, denied, Launchpad pipeline, grants tracker, contacts)
-- `query_donors` — Building21 Development CRM donor lookup (list / profile / summary). Profile mode joins one donor's record to their gift history, pipeline, Launchpad-specific asks, and grants
-- `query_attendance` — three Launchpad cohort attendance sheets unified into `attendance_records`. By-student rates, aggregate breakdowns, raw event drill-downs
-- `query_employment` — post-program employment data (employer, wages, hours, exit codes) from the Employment tab
-- `query_postsecondary` — college enrollment tracking from National Student Clearinghouse data
-- `search_conversations` — semantic search over Drive docs + Notion meeting transcripts (pgvector)
-- `search_by_person` — document search scoped to a student or staff name
-- `search_documents` — raw document chunk search with optional entity filter
-- `get_entity_brief` — student profile + phase progression + certifications + recent mentions; **also surfaces donor profile + giving history + pipeline + grants** when the named person matches a donor
-- `get_finance_brief` — Aplos fund balances, chart-of-accounts summary, and recent Aplos transactions
+**Active tools (5):**
+- `query_finances` — financial data from `finance_snapshots` (Aplos accounting tabs)
+- `get_finance_brief` — fund balances, chart-of-accounts summary, recent transactions
+- `query_school_rollup` — school-level performance/enrollment data from the PHL School Performance Model
+- `search_documents` — generic pgvector semantic search over `document_chunks`
+- `skill_finance_audit` — generates structured instructions for multi-view financial reports
 
-**Still pending:**
-- Slack connector for `search_conversations`
-
-Composite tools (`get_entity_brief`, `get_finance_brief`) MUST gracefully omit sections whose underlying data source is not yet active, rather than erroring. Each section in the response should be optional and the tool should annotate which sources contributed.
-
-## Overview
-
-The MCP server exposes 16 tools to Claude. It runs as a Node.js HTTP server using the `@modelcontextprotocol/sdk` package with Streamable HTTP transport (or stdio for local desktop use). All tools are read-only — no writes to any data source.
-
-Every tool call is logged to the `usage_logs` Postgres table (tool name, timestamp, duration, caller identity, token usage).
+All tools are read-only — no writes to any data source. Every tool call is logged to the `usage_logs` Postgres table (tool name, timestamp, duration, caller identity, token usage).
 
 **Server location:** `apps/mcp-server/`
 **Transport:** Streamable HTTP (production on ECS Fargate behind ALB) + stdio (Claude Desktop)
-**Production URL:** `https://mcp.launchpadinc.org`
 
 ## Tool Definitions
 
 ---
 
-### `query_attendance`
-
-Query Launchpad student attendance from the three cohort sheets unified into the `attendance_records` table. Supports per-student rates, aggregate breakdowns by any demographic dimension, and raw event drill-downs over a date range.
-
-**Source:** Three Google Sheets (`GOOGLE_SHEETS_ATTENDANCE_COHORT_1/2/3`).
-
-**Cohort shapes:**
-- Cohort 1 — weekly aggregate rows with a `Percentage` column (0–100); no P/A/E codes.
-- Cohort 2 — daily rows with `Code` ∈ {`P`, `A`, `E`}, `Check in` / `Check out` decimal times, expected vs. actual time-spent.
-- Cohort 3 — weekly check-in / check-out logs with `Code` (`P`/`A`/`E`) and `CheckInOrOut` event type. `LearningExp` values: `F1`/`F2` = Foundations Term 1/2, `O1` = 101.
-
-Cohorts are loose Launchpad groupings; a student may move between cohorts as they accelerate. Linkage to the students table is via `student_number` (LP####).
-
-**Description shown to Claude:**
-> Query Launchpad student attendance from the three cohort sheets (Cohort 1 / 2 / 3). Use for per-student attendance rates, aggregate rates by phase / race / cohort / school / etc., or raw event drill-downs over a date range. Cohorts are loose Launchpad groupings (students may move between them as they accelerate); rates blend cohort 1 (already-aggregated weekly %), cohort 2 (daily P/A/E codes), and cohort 3 (weekly check-in/out logs with codes). Excused absences are excluded from rate calculations.
-
-**Input Schema:**
-```json
-{
-  "type": "object",
-  "properties": {
-    "query_type": { "type": "string", "enum": ["by_student", "aggregate", "events"] },
-    "student_number": { "type": "string", "description": "LP#### (joins students.student_id)" },
-    "cohort": { "type": "number", "enum": [1, 2, 3], "description": "Restrict to one cohort. Default: all three." },
-    "current_phase": { "type": "string", "description": "Foundations / 101 / Lightspeed / LiftOff. Joined via students table." },
-    "race": { "type": "string" },
-    "gender": { "type": "string" },
-    "school": { "type": "string", "description": "Partial match." },
-    "enrollment_status": { "type": "string", "description": "E / EP / EL / N." },
-    "graduation_year": { "type": "number" },
-    "start_date": { "type": "string", "format": "date" },
-    "end_date": { "type": "string", "format": "date" },
-    "group_by": {
-      "type": "string",
-      "enum": ["cohort", "current_phase", "race", "gender", "school", "enrollment_status", "graduation_year"],
-      "description": "For 'aggregate' only. Default 'cohort'."
-    },
-    "limit": { "type": "number", "description": "For 'events' only. Default 200, max 500." }
-  },
-  "required": ["query_type"]
-}
-```
-
-**Rate calculation:**
-- Cohort 1 — weighted average of the `percentage` column.
-- Cohort 2 / 3 — `present / (present + absent)`, with **excused excluded from both numerator and denominator**.
-- Mixed-cohort students contribute via both signals (cohort-1 rows weight 1 each; cohort-2/3 P/A rows weight 1 each).
-
-**Output Schema (`by_student`):**
-```json
-{
-  "query_type": "by_student",
-  "total_students": 151,
-  "students": [
-    {
-      "student_number": "LP0181",
-      "canonical_name": "Tai Pham",
-      "current_phase": "101",
-      "race": "Asian",
-      "school": "Furness High School",
-      "cohorts": [2, 3],
-      "attendance_rate_pct": 92.4,
-      "rows_counted": 187,
-      "present": 167,
-      "absent": 14,
-      "excused": 6
-    }
-  ]
-}
-```
-
-**Output Schema (`aggregate`):**
-```json
-{
-  "query_type": "aggregate",
-  "group_by": "cohort",
-  "overall": { "student_count": 151, "attendance_rate_pct": 86.1, "rows_counted": 14092 },
-  "breakdown": [
-    { "group": "cohort_3", "student_count": 85, "attendance_rate_pct": 85.1,
-      "rows_counted": 8296, "present": 6438, "absent": 1126, "excused": 112 }
-  ]
-}
-```
-
-**Output Schema (`events`):**
-```json
-{
-  "query_type": "events",
-  "total_rows_matched": 8296,
-  "records_returned": 200,
-  "truncated": true,
-  "records": [
-    { "id": "...", "cohort": 3, "studentNumber": "LP0181", "date": "2026-04-22",
-      "code": "P", "rowData": { "learning_exp": "O1", "...": "..." } }
-  ]
-}
-```
-
----
-
-### `query_employment`
-
-Query post-program employment data from the `student_employment` table. Tracks employer, job title, wages, hours, and exit codes.
-
-**Input Schema:**
-```json
-{
-  "type": "object",
-  "properties": {
-    "student_number": { "type": "string", "description": "LP#### — filter to one student." },
-    "employer": { "type": "string", "description": "Partial match on employer name." },
-    "employment_type": { "type": "string", "description": "Filter by type (e.g. Full-time, Part-time, Internship)." },
-    "exit_code": { "type": "string", "description": "Filter by exit code." }
-  },
-  "required": []
-}
-```
-
----
-
-### `query_postsecondary`
-
-Query college enrollment data from the `student_postsecondary` table (National Student Clearinghouse). Tracks institution, enrollment status, class level, majors, and graduation.
-
-**Input Schema:**
-```json
-{
-  "type": "object",
-  "properties": {
-    "student_number": { "type": "string", "description": "LP#### — filter to one student." },
-    "institution": { "type": "string", "description": "Partial match on institution name." },
-    "enrollment_status": { "type": "string", "description": "Single-letter code: F=Full-time, Q=Three-quarter, H=Half-time, etc." },
-    "graduated": { "type": "boolean", "description": "Filter to graduated or not." }
-  },
-  "required": []
-}
-```
-
----
-
-### `search_documents`
-
-Raw document chunk search with optional entity filter. Searches `document_chunks` using pgvector cosine similarity.
-
-**Input Schema:**
-```json
-{
-  "type": "object",
-  "properties": {
-    "query": { "type": "string", "description": "Natural language search query." },
-    "source": { "type": "string", "description": "Filter by source (e.g. 'notion', 'drive')." },
-    "top_k": { "type": "integer", "description": "Number of results. Default 8, max 20.", "default": 8 }
-  },
-  "required": ["query"]
-}
-```
-
----
-
-### `query_outcomes`
-
-Query Beacon competency outcomes for a student.
-
-**Description shown to Claude:**
-> Look up Beacon Learning Management System outcomes and competency assessments for a student. Returns competency levels and scores. Use this tool when asked about student progress, competency development, or academic outcomes.
-
-**Input Schema:**
-```json
-{
-  "type": "object",
-  "properties": {
-    "student_name": {
-      "type": "string",
-      "description": "Name, nickname, or ID of the student."
-    },
-    "competency": {
-      "type": "string",
-      "description": "Optional: filter to a specific competency name (partial match supported)."
-    },
-    "term": {
-      "type": "string",
-      "description": "Optional: filter to a specific term (e.g. 'Spring 2024')."
-    }
-  },
-  "required": []
-}
-```
-
-**Output Schema:**
-```json
-{
-  "student": { "id": "uuid", "canonical_name": "Maria Garcia" },
-  "outcomes": [
-    {
-      "competency": "Critical Thinking",
-      "level": "Developing",
-      "score": 2.5,
-      "assessed_at": "2024-03-10",
-      "term": "Spring 2024"
-    }
-  ],
-  "entity_resolved": true,
-  "entity_confidence": 1.0
-}
-```
-
----
-
-### `get_student_info`
-
-Retrieve a student's structured profile.
-
-**Description shown to Claude:**
-> Get structured profile information for a student — grade, cohort, program, IEP/ELL status, interests, goals, and known aliases across all data sources. Use this tool to understand who a student is before asking follow-up questions about their attendance or outcomes.
-
-**Input Schema:**
-```json
-{
-  "type": "object",
-  "properties": {
-    "student_name": {
-      "type": "string",
-      "description": "Name, nickname, or ID of the student."
-    }
-  },
-  "required": ["student_name"]
-}
-```
-
-**Output Schema:**
-```json
-{
-  "student": {
-    "id": "uuid",
-    "canonical_name": "Maria Garcia",
-    "student_id": "S1042",
-    "grade": "11",
-    "cohort": "2025",
-    "program": "Launchpad",
-    "email": "maria@school.edu",
-    "iep": false,
-    "ell": true,
-    "interests": ["engineering", "robotics"],
-    "goals": ["college readiness", "internship by senior year"],
-    "known_aliases": [
-      { "source": "slack", "alias": "@maria.g" },
-      { "source": "sheets", "alias": "S1042" }
-    ]
-  },
-  "entity_resolved": true,
-  "entity_confidence": 1.0
-}
-```
-
----
-
-### `search_conversations`
-
-
-
----
-
-### `search_by_person`
-
-Cross-source semantic search scoped to a specific student or staff member.
-
-**Description shown to Claude:**
-> Search all conversations (Slack and Notion meeting transcripts) for content about or involving a specific person. Resolves the person's identity across sources before searching. Use this tool when you want to find everything that's been said about a particular student or staff member.
-
-**Input Schema:**
-```json
-{
-  "type": "object",
-  "properties": {
-    "person_name": {
-      "type": "string",
-      "description": "Name, nickname, or handle of the student or staff member."
-    },
-    "query": {
-      "type": "string",
-      "description": "Optional: narrow the search with a semantic query within results for this person."
-    },
-    "top_k": {
-      "type": "integer",
-      "default": 10
-    }
-  },
-  "required": ["person_name"]
-}
-```
-
-**Output Schema:** Same as `search_conversations`, plus:
-```json
-{
-  "entity": { "id": "uuid", "canonical_name": "Maria Garcia", "entity_type": "student" },
-  "entity_resolved": true,
-  "results": [...]
-}
-```
-
----
-
-### `get_entity_brief`
-
-Return a full summary card for a person — student profile + phase progression + certifications + recent Drive mentions, and **also** donor profile + giving history + pipeline + grants when the named person matches a donor in the Development CRM. Looks up student and donor sources in parallel; students take precedence when both match.
-
-**Description shown to Claude:**
-> Get a comprehensive brief on a student: profile, phase progression, certifications, and recent Drive document mentions. Also surfaces donor information (giving history, pipeline, grants) when the named person matches a Development CRM donor. Use this as a starting point when asked to summarize or give an overview of a person.
-
-**Input Schema:**
-```json
-{
-  "type": "object",
-  "properties": {
-    "person_name": {
-      "type": "string",
-      "description": "Name, nickname, or handle of the student, staff member, or donor."
-    }
-  },
-  "required": ["person_name"]
-}
-```
-
-**Output Schema:**
-```json
-{
-  "entity": { "id": "uuid", "canonical_name": "Maria Garcia", "entity_type": "student" },
-  "profile": { /* full students-table record (or null if entity is a donor) */ },
-  "phase_progression": { /* student_phase_outcomes */ },
-  "certifications": [ /* PCEP etc. */ ],
-  "donor_profile": { /* Contacts row if matched, else null */ },
-  "donor_giving_history": [ /* Launchpad-scoped gifts */ ],
-  "donor_prospect_pipeline": [],
-  "donor_launchpad_pipeline": [],
-  "donor_grants": [],
-  "recent_mentions": [ /* top 5 from search_by_person */ ],
-  "sources_active": ["google_sheets", "google_drive"],
-  "sources_deferred": ["slack", "notion"]
-}
-```
-
-If the name resolves only to a donor, `entity.entity_type` is `"donor"` and student-side fields (`profile`, `phase_progression`, `certifications`) are null. If neither student nor donor matches, returns the student-side error or the donor ambiguity response.
-
-This tool calls `getStudentInfo`, `queryOutcomes`, `queryDonors:profile`, and `searchByPerson` in parallel and aggregates results.
-
----
-
----
-
 ### `query_finances`
 
-Look up financial data across multiple ingested sheets — Launchpad budgets and actuals, phase allocations, stipend transactions, and Building21 fundraising/development records. Each `query_type` maps to a specific tab in `finance_snapshots`. The handler is generic: it returns the row data with optional `fund` / `category` / `donor` text filters and a Launchpad scoping flag for CRM queries.
+Look up financial data from `finance_snapshots`. Each `query_type` maps to a data-source tab; the handler is generic and returns the raw `rowData` JSON so the caller can read whichever columns matter for the question.
+
+**Source:** `connectors/aplos` — Aplos accounting tabs, stored as `finance_snapshots` rows with `tab_name` values like `aplos:accounts`, `aplos:funds`, `aplos:transactions`.
 
 **Description shown to Claude:**
-> Look up financial data — budgets, actuals, forecasts, fund balances, stipend transactions, and Building21 fundraising/development records. Use for spending, budget vs. actual variances, phase cost allocations, Rapid/PEX payment history, year-over-year trends, donor gifts, prospect pipeline, and grant lifecycle. Development CRM types (`dev_*`) cover all B21 fundraising; pass `launchpad_only=false` to see non-Launchpad data.
-
-**Query types:**
-
-| `query_type` | Source tab | Returns |
-|---|---|---|
-| `prior_month` | Prior Month Budget vs Actual | Last closed month actuals vs budget |
-| `ytd` | YTD Budget vs Actual | YTD actuals vs budget |
-| `forecast` | Rolling Forecast | Rolling monthly forecast |
-| `monthly` | Monthly | Month-by-month detail |
-| `fund_balances` | Combined Funds | Balances by fund |
-| `annual` | Annual | Year-over-year totals |
-| `budget_actuals` | Prior Month + YTD | Prior month + YTD combined |
-| `phase_budget_dashboard` | `phase_dashboard:2025 actuals` | HS / LiftOff % allocations from Budget by Phase Dashboard "2025 Actuals" tab |
-| `phase_budget_monthly_liftoff` | `phase_dashboard:monthly liftoff only` | Projected monthly LiftOff spend by account; columns are `projected_total_fy<year>` + 24 monthly fields (`jul_<year>` … `jun_<year+2>`) |
-| `phase_budget_monthly_hs` | `phase_dashboard:monthly hs only` | Same shape, HS phase (HS = 101) |
-| `q3_2026_actuals_global_pct/hc_pct/actuals` | `q3_2026_actuals:*` tabs | Cost allocation %, human capital %, account-level actuals from Q3 2026 by-phase actuals sheet |
-| `phase_actuals_2025_global_pct/hc_pct/actuals` | `phase_actuals_2025:*` tabs | Same for the 2025 by-phase actuals sheet |
-| `rapid_dashboard` | `rapid:Dashboard` | Monthly Rapid stipend totals by account |
-| `rapid_transactions` | `rapid:FY2023..FY2025` | Individual Rapid payments |
-| `pex_dashboard` | `pex:Dashboard` | Monthly PEX card totals by account |
-| `pex_transactions` | `pex:FY2022..FY2026` | Individual PEX card transactions |
-| `dev_giving_history` | `development:giving history` | Past gifts (gross_amount, donor_name, fund_name, project, fiscal_year, …) |
-| `dev_prospect_pipeline` | `development:prospect pipeline` | Open prospects with strategy / owner / next_action |
-| `dev_denied` | `development:denied` | Prospects that were denied |
-| `dev_launchpad_pipeline` | `development:launchpad pipeline` | Launchpad-specific asks (already Launchpad-scoped; ask_amount, status, fy, month, probability) |
-| `dev_grants_tracker` | `development:grants tracker` | Grants lifecycle (deadlines, report due dates, period start/end, restrictions) |
-| `dev_contacts` | `development:contacts` | Donor master records (donor_name, donor_type_coa, status, primary_fund, lifetime_giving, FY giving totals) |
-| `aplos_accounts` | `aplos:accounts` | Aplos chart of accounts (account_number, name, category, type, activity) |
-| `aplos_funds` | `aplos:funds` | Aplos fund snapshots (fund name, balance_account_name, snapshot_date) |
-| `aplos_transactions` | `aplos:transactions` | Aplos accounting transactions (date, amount, memo, contact) |
+> Look up financial data from finance_snapshots (Aplos accounting). Each query_type maps to a data source tab. Returns the raw rowData JSON so the caller can read whichever columns matter for the question.
 
 **Input Schema:**
 ```json
 {
   "type": "object",
   "properties": {
-    "query_type": { "type": "string", "enum": ["prior_month", "ytd", "forecast", "monthly", "fund_balances", "annual", "budget_actuals", "phase_budget_dashboard", "phase_budget_monthly_liftoff", "phase_budget_monthly_hs", "q3_2026_actuals_global_pct", "q3_2026_actuals_hc_pct", "q3_2026_actuals", "phase_actuals_2025_global_pct", "phase_actuals_2025_hc_pct", "phase_actuals_2025_actuals", "rapid_dashboard", "rapid_transactions", "pex_dashboard", "pex_transactions", "dev_giving_history", "dev_prospect_pipeline", "dev_denied", "dev_launchpad_pipeline", "dev_grants_tracker", "dev_contacts", "aplos_accounts", "aplos_funds", "aplos_transactions"] },
-    "fund": { "type": "string", "description": "Filter by fund name (partial match). On dev_* types matches across the standard fund/project columns." },
-    "category": { "type": "string", "description": "Filter by account name / category (partial match)." },
-    "row_type": { "type": "string", "enum": ["detail", "summary", "all"], "description": "Default 'all'." },
-    "launchpad_only": { "type": "boolean", "description": "Default true. Applies to dev_* query types only — restricts CRM rows to those whose Fund / Project mentions 'Launchpad'. Set false to see all B21 development data. The Launchpad Pipeline tab is implicitly scoped." },
-    "donor": { "type": "string", "description": "Filter by donor name (partial, case-insensitive). Most useful on dev_giving_history, dev_prospect_pipeline, dev_denied, dev_grants_tracker, dev_launchpad_pipeline, dev_contacts." }
+    "query_type": { "type": "string", "enum": ["aplos_accounts", "aplos_funds", "aplos_transactions"] },
+    "tab_name": { "type": "string", "description": "Override tab_name match (advanced)." },
+    "period": { "type": "string" },
+    "contains": { "type": "string", "description": "Substring match against the JSON-serialized rowData (currently unused by the handler)." },
+    "limit": { "type": "number" }
   },
   "required": ["query_type"]
 }
 ```
 
-**Output Schema (every query_type):**
+**Output Schema:**
 ```json
 {
-  "query_type": "...",
-  "tabs_queried": ["..."],
-  "launchpad_only": true,
-  "record_count": 174,
-  "records": [ /* row_data fields, vary by tab. See connector docs for column names. */ ],
-  "sources": ["google_sheets"]
-}
-```
-
-**Launchpad scoping:** When `launchpad_only=true` (default) and the query targets a CRM tab listed in `TABS_WITH_LAUNCHPAD_FILTER`, rows are filtered to those whose `fund`, `fund_name`, `fund_s`, `primary_fund`, `project`, `projects`, or `project_s` contains "launchpad" (case-insensitive). The `dev_launchpad_pipeline` tab is excluded from the filter (already Launchpad-scoped by construction).
-
----
-
-### `query_donors`
-
-Donor lookup against the Building21 Development CRM (Contacts tab + linked records). Three modes:
-- `list` — donors filtered by name / type / status
-- `profile` — full record for one donor + linked Giving History + Prospect Pipeline + Launchpad Pipeline + Grants
-- `summary` — breakdown by donor type, status, lifetime giving total
-
-**Description shown to Claude:**
-> Look up Building21 donors and donor relationships from the Development CRM. Use for questions about specific donors ('what has Vanguard given'), donor population breakdowns ('how many active foundations'), or pulling a complete donor profile (gifts, pipeline, grants). Defaults to Launchpad-only data — set `launchpad_only=false` to see all B21 development data. For aggregate finance views (total raised, pipeline value by month, etc.), use `query_finances` with the `dev_*` query types instead.
-
-**Input Schema:**
-```json
-{
-  "type": "object",
-  "properties": {
-    "query_type": { "type": "string", "enum": ["list", "profile", "summary"] },
-    "donor_name": { "type": "string", "description": "Required for 'profile'. Partial, case-insensitive name match. Multiple matches return ambiguous=true with candidates." },
-    "donor_type": { "type": "string", "description": "List only. Filter by donor_type_coa (Individual / Foundation / Corporate / Government / EITC) — exact, case-insensitive." },
-    "status": { "type": "string", "description": "List only. Filter by donor status (Active / Inactive / Prospect)." },
-    "launchpad_only": { "type": "boolean", "description": "Default true. On profile results, filters linked records (gifts / pipeline / grants) to those whose Fund or Project mentions 'Launchpad'. The Contacts record itself is always included." }
-  },
-  "required": ["query_type"]
-}
-```
-
-**Output Schema (`profile`):**
-```json
-{
-  "query_type": "profile",
-  "matched_name": "William Penn Foundation",
-  "contact_id": "D-197",
-  "launchpad_only": true,
-  "profile": { /* full Contacts row */ },
-  "giving_history": [ /* linked gifts, Launchpad-scoped */ ],
-  "prospect_pipeline": [ /* open prospects */ ],
-  "launchpad_pipeline": [ /* Launchpad-specific asks */ ],
-  "grants": [ /* grants tracker rows */ ]
-}
-```
-
-If the name resolves to multiple donors, returns `ambiguous: true` with a `candidates` array instead.
-
-**Output Schema (`summary`):**
-```json
-{
-  "query_type": "summary",
-  "total_donors": 253,
-  "by_donor_type": [{ "donor_type": "Individual", "count": 129 }, ...],
-  "by_status": [{ "status": "Active", "count": 135 }, ...],
-  "lifetime_giving": { "total": 19078234.50, "contributing_donors": 246 }
+  "query_type": "aplos_funds",
+  "record_count": 42,
+  "records": [
+    { "source_id": "aplos:funds:12", "tab_name": "aplos:funds", "period": null, "row_data": { "...": "..." } }
+  ],
+  "sources": ["aplos"]
 }
 ```
 
@@ -516,22 +60,17 @@ If the name resolves to multiple donors, returns `ambiguous: true` with a `candi
 
 ### `get_finance_brief`
 
-Return a comprehensive financial overview — fund balances, YTD revenue vs. expenses, top campaigns, recent transactions.
+High-level financial overview: Aplos fund balances, chart-of-accounts summary, recent transactions.
 
 **Description shown to Claude:**
-> Get a high-level financial overview of the organization: fund balances, year-to-date income and expenses, active fundraising campaigns, and recent Aplos transactions. Use this as a starting point for any general finance question or when asked for a financial summary.
+> Get a high-level financial overview of the organization: fund balances, chart-of-accounts summary, and recent transactions. Use this as a starting point for any general finance question.
 
 **Input Schema:**
 ```json
 {
   "type": "object",
   "properties": {
-    "period": {
-      "type": "string",
-      "enum": ["ytd", "last_30_days", "last_quarter"],
-      "description": "Time period for income/expense summary. Defaults to 'ytd'.",
-      "default": "ytd"
-    }
+    "period": { "type": "string", "enum": ["ytd", "last_30_days", "last_quarter"], "default": "ytd" }
   },
   "required": []
 }
@@ -541,70 +80,143 @@ Return a comprehensive financial overview — fund balances, YTD revenue vs. exp
 ```json
 {
   "period": "ytd",
-  "aplos_funds": [ /* fund records from Aplos (name, balance_account_name, snapshot_date) */ ],
-  "aplos_accounts_summary": {
-    "total": 232,
-    "by_category": { "asset": 40, "liability": 12, "revenue": 80, "expense": 90, "equity": 10 }
-  },
-  "recent_transactions": [ /* last 20 Aplos transactions (date, memo, amount) */ ],
-  "sheet_fund_balances": [ /* Google Sheets fund balance rows, if any */ ],
-  "sources_active": ["aplos", "google_sheets"]
+  "aplos_funds": [ { "source_id": "...", "period": "...", "row_data": {} } ],
+  "aplos_accounts_summary": { "total": 42, "by_category": { "asset": 10, "revenue": 12 } },
+  "recent_transactions": [ { "source_id": "...", "period": "...", "row_data": {} } ],
+  "sources_active": ["aplos"]
 }
 ```
 
-Queries Aplos (`finance_snapshots` with `aplos:*` tab names) and Google Sheets fund balances directly.
+---
+
+### `query_school_rollup`
+
+School-level performance and enrollment data from the PHL School Performance Model's "School Rollup" tab (301 schools, one row each). See [docs/data-sources/school-rollup-dictionary.md](data-sources/school-rollup-dictionary.md) for full field definitions and open questions with the client.
+
+**Source:** `connectors/google-sheets` → `school_rollup` table.
+
+**Description shown to Claude:**
+> Look up school-level performance and enrollment data from the PHL School Performance Model School Rollup tab — PSSA/Keystone proficiency, predicted-vs-actual residuals, performance bands, and charter enrollment/fill-tier data for Philadelphia public and charter schools.
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "school_name": { "type": "string", "description": "Substring match (case-insensitive)." },
+    "aun": { "type": "string", "description": "Exact match." },
+    "school_number": { "type": "string", "description": "Exact match." },
+    "district_name": { "type": "string", "description": "Substring match (case-insensitive)." },
+    "school_type": { "type": "string", "enum": ["District", "Charter"] },
+    "performance_band": {
+      "type": "string",
+      "enum": ["Above Line (5+)", "Within 5 pts", "Below Line (5+)", "Excluded (Selection Criteria)"],
+      "description": "Matches if ANY of the 5 exam band columns equals this value, unless scoped by `exam`."
+    },
+    "exam": {
+      "type": "string",
+      "enum": ["pssa_reading", "pssa_math", "keystone_algebra_i", "keystone_biology", "keystone_literature"],
+      "description": "Scopes performance_band to one specific exam instead of matching any of the 5."
+    },
+    "include_excluded": { "type": "boolean", "default": true, "description": "If false, excludes rows where excluded_selection_criteria = true." },
+    "limit": { "type": "number", "default": 50, "description": "Max 200." }
+  },
+  "required": []
+}
+```
+
+**Output Schema:**
+```json
+{
+  "record_count": 1,
+  "schools": [
+    {
+      "aun": "126510015", "school_number": "7825", "school_name": "AD PRIMA CS",
+      "district_name": "AD PRIMA CS", "school_type": "Charter", "grade_span": "K-8",
+      "pct_black_hispanic": 95.94, "pct_low_income": 92.74, "excluded_selection_criteria": false,
+      "exams": {
+        "pssa_reading": { "n_scored": 377, "pct_proficient": 37.4, "predicted": 17.39, "residual": 20.01, "band": "Above Line (5+)" },
+        "pssa_math": { "n_scored": 378, "pct_proficient": 20.4, "predicted": 8.64, "residual": 11.76, "band": "Above Line (5+)" },
+        "keystone_algebra_i": { "n_scored": null, "pct_proficient": null, "predicted": null, "residual": null, "band": null },
+        "keystone_biology": { "n_scored": null, "pct_proficient": null, "predicted": null, "residual": null, "band": null },
+        "keystone_literature": { "n_scored": null, "pct_proficient": null, "predicted": null, "residual": null, "band": null }
+      },
+      "simple_avg_residual": 15.9, "enrollment_weighted_avg_residual": 15.9,
+      "above_line_count": 2, "within_5_count": 0, "below_line_count": 0, "tests_with_data": 2,
+      "current_enrollment": 617, "authorized_enrollment_cap": 700, "unused_seats": 83,
+      "fill_tier": "Fill-B", "eapi_tier": "EAPI-A"
+    }
+  ]
+}
+```
+
+Note: percentages, residuals, and predicted values are on a **0–100 scale** (not 0–1) — a prior draft of this model got that wrong; it's correct now. `null` exam blocks mean the school has no data for that exam (e.g. K-8 schools have no Keystone data — Keystone is high-school-only), not a data-quality problem.
 
 ---
 
-### `query_enrollment`
+### `search_documents`
 
-Aggregate student enrollment data from `student_phase_outcomes`. Supports total headcount, phase breakdowns with optional status filter, date-range active queries, school / cohort / race breakdowns, per-student rows with the full demographic filter set, and per-Launchpad-cohort grad/retention rates.
+Generic pgvector semantic search over `document_chunks`. No live connector currently writes to this table, so results will be empty until one does (`search_documents` itself works correctly regardless).
 
-**Query types:**
-- `total` — all-time headcount
-- `by_phase` — count per phase, optional `status` filter (Completed / Dropped Before Completion / In Progress / Not Enrolled)
-- `active_during` — students enrolled in a phase during a date window
-- `by_school` — breakdown by school name
-- `by_cohort` — breakdown by HS graduation year
-- `by_race` — breakdown by race / ethnicity
-- `by_student` — per-student records with phase statuses, supports the **full student-info filter set** (race, gender, school, current_phase, enrollment_status, withdrawal_code, entry/withdrawal date ranges, city, zip, college_enroll, university, major, workforce_*, internship_status, income range, parental_ed range, plus numeric range filters on interview/GPA/algebra/geometry scores)
-- `by_program_year` — grad/retention rates per Launchpad cohort year (grouped by foundations_start_date), supports `liftoff_graduating` and `phase_101_graduating` projections
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": { "type": "string", "description": "Natural language search query." },
+    "source": { "type": "string", "description": "Optional: restrict to a single source." },
+    "top_k": { "type": "integer", "description": "Default 8, max 20." },
+    "min_similarity": { "type": "number", "description": "Default 0.7." }
+  },
+  "required": ["query"]
+}
+```
 
-`by_student` is the right tool for sliced retention queries (e.g., "101 retention for African American students" → `query_type=by_student`, `phase=101`, `race='Black or African American'`, then tally `phase_101_status` on the result).
+**Output Schema:**
+```json
+{
+  "query": "...",
+  "result_count": 3,
+  "results": [
+    { "id": "uuid", "source": "...", "source_id": "...", "title": null, "content": "...", "metadata": {}, "similarity": 0.83 }
+  ]
+}
+```
 
----
-
-### `query_students`
-
-Population-level analytics on the `students` table. Supports numeric stats (avg/min/max/quartiles), categorical breakdowns, and filtered list pulls. Filters cover every queryable column on the students table (PII columns like email/phone/street are intentionally excluded at ingest).
-
-**Query types:** `numeric_stats`, `breakdown`, `list`.
-
-**Numeric fields:** interview_score, tech_interest_onboarding, interview_passion_score, interview_college_score, hs_gpa, algebra1_grade, geometry_grade, zip, distance_to_office_miles.
-
-**Categorical fields (for breakdown):** college_enroll, university, major, workforce_program_referral, workforce_referral_status, internship_status, parental_ed, income.
-
-**Filter set (all query types):** race, gender, school (partial), graduation_year, enrollment_status, current_phase, withdrawal_code, entry_date_start/end, withdrawal_date_start/end, city, zip, college_enroll, university (partial), major, workforce_program_referral, workforce_referral_status, internship_status, plus numeric range via `filter_field` + `filter_min` / `filter_max`. `income` and `parental_ed` accept range filters (income → dollar amounts; parental_ed → 0=I don't know, 1=neither, 2=one, 3=both).
-
----
-
-### `query_certifications`
-
-Certification data (PCEP, future certs) — pass/fail rates, scores, and breakdowns by cert type, LP phase, or date range.
-
-**Query types:** `summary`, `by_type`, `by_phase`, `by_result`, `scores`.
-
-**Filters:** `type`, `phase`, `result` (Pass / Fail), `start_date`, `end_date`.
+Results are filtered by an `allowed_emails` visibility rule read from each chunk's `metadata` (inherited from the original build's meeting-transcript access control) — a chunk with no `allowed_emails` key, or an explicit `null`, is visible to everyone; a chunk with a non-null array is visible only to callers whose email is in that list.
 
 ---
 
-### `query_competency`
+### `skill_finance_audit`
 
-Per-student competency data (scores) or the rubric structure (skills + opportunity totals by phase and term).
+Returns structured instructions for Claude to follow to produce a financial report — it doesn't return data itself, it returns a prompt describing which of the other tools to call and how to assemble the result.
 
-**Query types:** `scores`, `rubric`.
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "report_type": { "type": "string", "enum": ["monthly_close", "audit_prep", "board_financials", "fund_reconciliation", "custom_query"] },
+    "period": { "type": "string" },
+    "fund_name": { "type": "string" },
+    "custom_question": { "type": "string" },
+    "comparison_period": { "type": "string" },
+    "additional_context": { "type": "string" }
+  },
+  "required": ["report_type"]
+}
+```
 
-**Filters:** `student_number`, `competency` (partial match).
+**Output Schema:**
+```json
+{
+  "skill": "skill_finance_audit",
+  "note": "Follow the instructions below step by step. ...",
+  "instructions": "..."
+}
+```
+
+Only calls `query_finances`/`get_finance_brief` internally (via the instructions it hands back to Claude) — the donor/grant-reporting content from the original build (funder reports, cost-per-student metrics) was removed since there's no donor data model in this project.
 
 ---
 
@@ -613,11 +225,10 @@ Per-student competency data (scores) or the rubric structure (skills + opportuni
 ```json
 {
   "error": {
-    "code": "entity_not_found",
-    "message": "Could not resolve 'maria g' to a known student or staff member.",
-    "suggestions": ["Maria Garcia (student)", "Maria Chen (staff)"]
+    "code": "internal_error",
+    "message": "..."
   }
 }
 ```
 
-Error codes: `entity_not_found`, `no_records`, `search_failed`, `internal_error`
+Error codes in use: `internal_error`, `search_failed`, `permission_denied`. Tool-specific codes (e.g. `entity_not_found`) existed in the original build for student/donor lookup tools that no longer exist here.

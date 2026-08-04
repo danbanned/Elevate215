@@ -1,14 +1,8 @@
-# LP Internal AI V1 — Setup Guide Index
+# Setup Guide Index
 
-This folder contains a step-by-step setup guide for every system in the V1 stack. Work through them in order — each phase assumes the previous one is complete.
+> **Historical reference, not a live status board.** This folder documents the phase-by-phase AWS infrastructure buildout for the original client this repo was built for, before it was restructured into Elevate215 (see `CLAUDE.md`'s "What This Is"). The checklist below reflects that original build — connectors, tool counts, and model counts it references (Notion, Slack, 16 tools, 30 models, etc.) no longer match this repo. Useful as a **pattern reference** for how to wire up RDS/Neon, ECS, EventBridge, Secrets Manager, etc. — not as documentation of Elevate215's current state. For that, see the top-level `README.md` and `docs/database-schema.md` / `docs/mcp-server-spec.md`.
 
-**Stack locked:** May 18 2026 · Updated: June 10 2026 · Next review: August 2026
-
-Quick onboarding resources:
-
-- [../reference/new-developer-playbook.md](../reference/new-developer-playbook.md)
-- [../reference/connector-capability-matrix.md](../reference/connector-capability-matrix.md)
-- [../../HOW-SKILLS-WORK.md](../../HOW-SKILLS-WORK.md)
+This folder contains a step-by-step setup guide for every system in the original stack. Work through them in order — each phase assumes the previous one is complete.
 
 ---
 

@@ -1,6 +1,6 @@
 # Local Development Runbook
 
-Goal: a fresh clone runs end-to-end on Docker Postgres in ~5 minutes — no AWS, no real API keys required.
+Goal: a fresh clone runs end-to-end on Docker Postgres in ~5 minutes — no AWS, no real API keys required for the parts that don't need one.
 
 ## Prerequisites
 
@@ -24,12 +24,9 @@ cp .env.example .env   # only if .env is missing
 pnpm db:generate
 pnpm --filter @lp-ai/lib-db push
 
-# 5. Seed sample data (3 students, donors, certifications, finance)
-pnpm db:seed
-
-# 6. Verify
+# 5. Verify
 pnpm -r typecheck
-pnpm test                   # 42 tests; entity-resolution + MCP integration suites need step 2 running
+pnpm test
 ```
 
 ## Running the apps
@@ -54,7 +51,7 @@ curl http://localhost:3000/api/health
 ```
 
 The dashboard reads from local Postgres. Sign-in is gated by Google OAuth + domain check; the middleware will redirect you to `/auth/signin`. For local dev you can either:
-- Bypass the middleware temporarily, or
+- Set `HQ_DEV_NO_AUTH=true` (only takes effect when `NODE_ENV=development` — has no effect in a production build), or
 - Create a Google OAuth client (see `docs/setup/08-hq-dashboard.md`) and fill in `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` in `.env`.
 
 ### MCP server (stdio — for Claude Desktop)
@@ -86,54 +83,53 @@ If `SYNC_SECRET` is set in `.env`, the `/mcp` endpoint requires `Authorization: 
 
 Each connector exposes a CLI:
 ```bash
-pnpm sync:sheets       # google-sheets (live — 12 syncs)
+pnpm sync:sheets       # google-sheets — School Rollup (live, reads a local Excel file)
 pnpm sync:aplos        # aplos (live)
-pnpm sync:notion       # notion meeting transcripts (live)
-pnpm sync:drive        # google-drive (skeleton)
-pnpm sync:slack        # slack (skeleton)
+pnpm sync:quickbooks   # quickbooks (noop today — OAuth/token-refresh only, no data sync yet)
 ```
 
-Live connectors sync real data when credentials are set. Skeleton connectors return `status: "noop"`. Each run writes a row to `sync_runs` — visible in HQ at `/sync`.
+Each run writes a row to `sync_runs` — visible in HQ at `/sync`.
 
 ## Smoke-test the full pipeline
 
-After seed:
 ```bash
-# 1. Stdio MCP: resolve a Slack handle to a student record
+# 1. Stdio MCP: list available tools
 echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"1.0"}}}
 {"jsonrpc":"2.0","method":"notifications/initialized"}
-{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_student_info","arguments":{"student_name":"@maria.g"}}}' \
+{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
   | node apps/mcp-server/dist/index.js | tail -1
 
 # 2. HQ health endpoint
 curl http://localhost:3000/api/health
 
-# 3. Watch usage_logs populate
+# 3. Watch usage_logs populate after a tool call
 psql "$DATABASE_URL" -c "SELECT tool_name, duration_ms, called_at FROM usage_logs ORDER BY called_at DESC LIMIT 5;"
 ```
 
 ## Building & deploying the app images
 
-Production images are built and deployed by **GitHub Actions** (`.github/workflows/deploy.yml`) — auto on push to `master`, or manually with `gh workflow run deploy.yml -f services=hq`. You do not build or push images by hand for local development; `pnpm dev` runs the apps directly against the local Postgres.
+- `apps/hq` deploys to EC2 via Docker over SSH — see `.github/workflows/deploy.yml`'s `deploy-hq` job. Auto-deploys on push to `main` (or `master`), or manually with `gh workflow run deploy.yml -f services=hq`.
+- `apps/mcp-server` / `apps/sync` still deploy to ECS Fargate, same workflow file.
+
+You do not build or push images by hand for local development; `pnpm dev` runs the apps directly against local Postgres.
 
 ## Common operations
 
 | Task | Command |
 |---|---|
-| Reset local DB | `pnpm db:down && pnpm db:up && pnpm --filter @lp-ai/lib-db push && pnpm db:seed` |
+| Reset local DB | `pnpm db:down && pnpm db:up && pnpm --filter @lp-ai/lib-db push` |
 | Open Prisma Studio (GUI) | `pnpm db:studio` |
 | Tail Postgres logs | `docker logs -f lp-internal-postgres` |
-| Run a single test file | `pnpm test --run packages/db/src/entity-resolution.test.ts` |
+| Run a single test file | `pnpm exec vitest run connectors/quickbooks/src/quickbooks-client.test.ts` |
 | Rebuild Prisma client after schema change | `pnpm db:generate` then `pnpm --filter @lp-ai/lib-db push` |
 
 ## Known things that won't work without credentials
 
-- `pnpm sync:drive` — requires `GOOGLE_SERVICE_ACCOUNT_JSON` (creds available but connector is skeleton)
-- `pnpm sync:slack` — requires `SLACK_BOT_TOKEN`
-- MCP tools that embed (`search_documents`, `search_conversations`, `search_by_person`) — require `OPENAI_API_KEY`
+- MCP tools that embed (`search_documents`) — require `OPENAI_API_KEY`; will also return nothing until a connector actually populates `document_chunks`
 - AWS Secrets Manager fetch path — requires `USE_AWS_SECRETS=true` and an authenticated AWS environment
-- Google OAuth sign-in to HQ — requires `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` (or set `HQ_DEV_NO_AUTH=true`)
+- Google OAuth sign-in to HQ — requires `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` (or set `HQ_DEV_NO_AUTH=true` for local dev only)
+- QuickBooks OAuth connect flow — requires `QUICKBOOKS_CLIENT_ID`/`_SECRET` (or the `_DEV_*` fallbacks) and `QUICKBOOKS_REDIRECT_URI`
 
-**Connectors that are live with credentials:** `sync:sheets`, `sync:aplos`, `sync:notion`.
+**Connectors live with credentials:** `sync:aplos`, `sync:sheets`. `sync:quickbooks` runs but doesn't sync data yet (OAuth/token-refresh only).
 
 Everything else above works against a clean clone.

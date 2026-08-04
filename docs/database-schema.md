@@ -2,141 +2,49 @@
 
 ORM: **Prisma**. The schema lives in `packages/db/prisma/schema.prisma`. The generated Prisma client is output to `packages/db/generated/prisma/` (non-standard path). Migrations are created with `pnpm --filter @lp-ai/lib-db migrate:dev` and applied with `pnpm db:migrate`.
 
-Extensions: `pgvector` (vector similarity), `pg_trgm` (trigram fuzzy matching).
+Extensions: `pgvector` (vector similarity), `pg_trgm` (trigram fuzzy matching — currently unused; carried over from the original build's entity-resolution feature, which was removed since this project has no multi-source identity-matching problem).
 
-## Tables (30 models)
+## Tables (15 models)
 
-### Student & Staff Core
-
-#### `students`
-
-Canonical student records. Sourced from the `Students` tab of the "Student Information for Launchpad LLMs" Google Sheet (V1 and V2 versions).
-
-**PII exclusions:** `dob` is stored but was historically excluded; `phone` is stored but should not be exposed via MCP tools. The connector enforces column-level allowlists.
-
-Key columns: `id` (UUID PK), `student_number` (LP#### format, unique), `canonical_name`, `email`, `current_phase`, `enrollment_status`, `cohort`, `gender`, `race_ethnicity`, `school_name`, `hs_graduation_year`, `entry_date`, `withdrawal_date`, `withdrawal_code`, plus academic scores (`interview_score`, `hs_gpa`, `algebra1_grade`, `geometry_grade`), post-program fields (`college_enroll`, `university`, `major`), and V2 additions (`dob`, `suffix`, `rapid_account_number`, `algebra_keystone_score`, `works_outside_launchpad`, etc.).
-
-Indexes: `canonical_name`, `cohort`.
-
-#### `staff`
-
-Canonical staff records. Minimal: `id` (UUID PK), `canonical_name`, `email`, `role`.
-
-Index: `canonical_name`.
-
-#### `entity_aliases`
-
-Maps every known name/handle/ID for a student or staff member back to their canonical record. This is the entity resolution graph.
-
-Key columns: `id` (UUID PK), `alias`, `entity_type` ('student' | 'staff'), `student_id` (FK → students), `staff_id` (FK → staff), `source`, `confidence` (0.00–1.00, default 1.0).
-
-Unique constraint: `(alias, entity_type)`. Index: `entity_type`.
-
-#### `pending_aliases`
-
-Aliases that couldn't be auto-resolved (fuzzy confidence < 0.85). Queued for manual review.
-
-Key columns: `id` (UUID PK), `alias`, `entity_type`, `source`, `context`.
-
-### Student Outcomes & Competency
-
-#### `student_info`
-
-Drive document content per student. Key columns: `id` (UUID PK), `student_id` (FK → students), `drive_file_id`, `content`, `synced_at`.
-
-#### `student_certifications`
-
-Phase completion records. Sourced from the `Certifications` tab. Key columns: `id` (UUID PK), `source_id` (unique, e.g. SP001), `student_id` (FK → students), `type`, `date`, `result`, `score`, `phase`.
-
-Indexes: `student_id`, `phase`, `type`, `date`.
-
-#### `student_phase_outcomes`
-
-Program phase progression per student. One row per student (upsert on `student_id`, unique). Phases: Foundations, Phase 101, Lightspeed, LiftOff — each with `status`, `start_date`, `end_date`.
-
-Index: `student_id`.
-
-#### `student_competencies`
-
-Per-student competency assessments. Key columns: `id` (UUID PK), `source_id` (unique), `student_number`, `competency`, `portfolio`, `baseline`, `performance_level`, `growth`, `progress`, `total_er`, `completed_er`, `missed_er`, `total_opportunities`.
-
-Indexes: `student_number`, `competency`.
-
-#### `student_employment`
-
-Post-program employment data. Key columns: `id` (UUID PK), `source_id` (unique), `student_number` (FK → students via student_number), `employer_name`, `employment_type`, `job_title`, `start_date`, `end_date`, `hourly_wage`, `weekly_hours`, `total_earned`, `exit_code`, `notes`.
-
-Indexes: `student_number`, `employer_name`, `exit_code`.
-
-#### `student_postsecondary`
-
-College enrollment tracking from National Student Clearinghouse. Key columns: `id` (UUID PK), `source_id` (unique), `student_number` (FK → students), `institution`, `institution_length`, `institution_type`, `enrollment_begin`, `enrollment_end`, `enrollment_status` (F/Q/H/L/A/W/D codes), `class_level` (F/S/J/R/C/N/B/M/D/P/L/G/A/T codes), `enrollment_major_1`, `enrollment_major_2`, `graduated`, `graduation_date`, `degree_title`, `degree_major_1/2/3`.
-
-Indexes: `student_number`, `institution`, `enrollment_status`.
-
-### Operational Data
-
-#### `enrollment_snapshots`
-
-Monthly enrollment counts by phase. Key columns: `source_id` (PK), `period_month` (Date), `phase`, `count`.
-
-Indexes: `period_month`, `phase`.
-
-#### `attendance_records`
-
-Unified storage for three Launchpad cohort attendance sheets. Each cohort has a different shape; common fields are promoted to columns and the full source row is preserved in `row_data`.
-
-Key columns: `id` (UUID PK), `source_id` (unique), `cohort` (1|2|3), `student_number` (LP####), `date`, `start_date`, `end_date`, `code` (P/A/E), `percentage` (cohort 1 only), `row_data` (JSON).
-
-Indexes: `student_number`, `(cohort, date)`, `date`.
+### Finance
 
 #### `finance_snapshots`
 
-Generic JSON store for tabular financial and CRM data ingested from multiple Google Sheets. Each row is one source-sheet row; column shapes vary by tab.
+Generic JSON store for tabular financial data. Each row is one source-sheet/API row; column shapes vary by tab, stored in `row_data`. Currently populated only by the `aplos` connector (`tab_name` values like `aplos:accounts`, `aplos:funds`, `aplos:transactions`).
 
-Key columns: `id` (UUID PK), `source_id` (unique, format `"{tab_name}:{rowNumber}"`), `tab_name`, `period`, `row_data` (JSON).
+Key columns: `id` (UUID PK), `source_id` (unique), `tab_name`, `period`, `row_data` (JSON), `last_synced_at`.
 
 Indexes: `tab_name`, `period`.
 
-**Tabs ingested:**
+### School Rollup
 
-| Source sheet | Stored `tab_name` values |
-|---|---|
-| Launchpad Dashboard | `Prior Month Budget vs Actual`, `YTD Budget vs Actual`, `Rolling Forecast`, `Monthly`, `Combined Funds`, `Annual` |
-| Phase Budget Dashboard | `phase_dashboard:2025 actuals`, `phase_dashboard:monthly liftoff only`, `phase_dashboard:monthly hs only` |
-| Phase Actuals Q3 2026 | `q3_2026_actuals:global %`, `q3_2026_actuals:Human capital %`, `q3_2026_actuals:actuals by phase` |
-| Phase Actuals 2025 | `phase_actuals_2025:global %`, `phase_actuals_2025:Human capital %`, `phase_actuals_2025:actuals by phase` |
-| Rapid stipends | `rapid:Dashboard`, `rapid:FY2023`, `rapid:FY2024`, `rapid:FY2025` |
-| PEX stipends | `pex:Dashboard`, `pex:FY2022`, `pex:FY2023`, `pex:FY2024`, `pex:FY2025`, `pex:FY2026` |
-| Building21 Development CRM | `development:contacts`, `development:giving history`, `development:prospect pipeline`, `development:denied`, `development:launchpad pipeline`, `development:grants tracker` |
+#### `school_rollup`
 
-### Donor / Finance
+Wide/denormalized by design — one row per school (301 rows), ~45 columns mirroring the PHL School Performance Model's "School Rollup" tab directly, not split into related tables. Populated by the `google-sheets` connector. See [docs/data-sources/school-rollup-dictionary.md](data-sources/school-rollup-dictionary.md) for the full field-by-field dictionary and the schema's own inline comments for known source-data quirks (a malformed header on the `aun` column, float-formatted IDs, etc.).
 
-#### `donor_contacts`
+Key columns: `id` (UUID PK), `aun` + `school_number` (composite unique — the upsert key), `district_name`, `school_name`, `school_type` ("District" | "Charter"), `grade_span_2025_26`, `pct_black_hispanic_2025_26`, `pct_low_income_2025_26`, `excluded_selection_criteria` (Boolean), five exam blocks (PSSA Reading, PSSA Math, Keystone Algebra I, Keystone Biology, Keystone Literature — each with `n_scored`, `pct_proficient`, `predicted`, `residual`, `band`), rollup columns (`simple_avg_residual`, `enrollment_weighted_avg_residual`, `above_line_count`, `within_5_count`, `below_line_count`, `tests_with_data`), and charter-only fields (`current_enrollment_sy_2025_26`, `authorized_enrollment_cap_sy_2025_26`, `unused_seats`, `fill_tier`, `eapi_tier` — always null on District rows).
 
-Donor contact records from the Development CRM. Key columns: `id` (UUID PK), `givebutter_contact_id`, `first_name`, `last_name`, `email`, `phone`, `organization_name`, `synced_at`.
+Percentages, residuals, and predicted values are `Decimal(5,2)` on a **0–100 scale**, not 0–1.
 
-Relations: `gifts` (DonorGift[]), `pipeline` (DonorPipeline[]).
+Indexes: `school_type`, `district_name`. Unique: `(aun, school_number)`.
 
-Index: `organization_name`.
+### Connector Auth
 
-#### `donor_gifts`
+#### `connector_credentials`
 
-Individual gift records. Key columns: `id` (UUID PK), `donor_contact_id` (FK → donor_contacts), `givebutter_tx_id` (legacy, may be null), `amount` (Float), `gift_date`, `campaign_name`, `fund`, `is_recurring`.
+Third-party connector OAuth credentials (access/refresh token + expiry), keyed by connector + the connector's own account identifier. Currently used by `quickbooks` (`connector: "quickbooks"`, `externalAccountId` = QuickBooks `realmId`). Distinct from `accounts` (NextAuth, HQ sign-in) and the MCP OAuth tables below (Claude/MCP client access) — this is the app authenticating *outward* to a third-party API on behalf of a connector.
 
-#### `donor_pipeline`
+Key columns: `id` (UUID PK), `connector`, `external_account_id`, `access_token`, `refresh_token`, `expires_at`, `updated_at`.
 
-Donor prospect pipeline stages. Key columns: `id` (UUID PK), `donor_contact_id` (FK → donor_contacts), `stage`, `ask_amount`, `likelihood`, `notes`.
-
-#### `donor_grants`
-
-Grant tracking records. Key columns: `id` (UUID PK), `funder`, `amount`, `status`, `deadline`, `award_date`, `fund`, `notes`.
+Unique: `(connector, external_account_id)`.
 
 ### Vector Search & Logging
 
 #### `document_chunks`
 
-Embedded document chunks for semantic search. Key columns: `id` (UUID PK), `source` ('notion', 'drive', 'slack', etc.), `source_id`, `title`, `content`, `embedding` (vector(1536) via pgvector), `metadata` (JSON), `synced_at`.
+Embedded document chunks for semantic search. Backs the `search_documents` MCP tool. No live connector currently writes to this table — the original build populated it from Drive/Slack/Notion, all removed.
+
+Key columns: `id` (UUID PK), `source`, `source_id`, `title`, `content`, `embedding` (`vector(1536)` via pgvector), `metadata` (JSON), `synced_at`.
 
 Index: `(source, source_id)`.
 
@@ -162,7 +70,7 @@ NextAuth user records for HQ sign-in. Key columns: `id` (cuid PK), `name`, `emai
 
 #### `accounts`
 
-OAuth provider accounts linked to users. Unique: `(provider, provider_account_id)`.
+OAuth provider accounts linked to users (Google, for HQ sign-in). Unique: `(provider, provider_account_id)`.
 
 #### `sessions`
 
@@ -172,9 +80,9 @@ NextAuth sessions. Key column: `session_token` (unique).
 
 Email verification tokens. Unique: `(identifier, token)`.
 
-### MCP OAuth 2.0 (Phase 23)
+### MCP OAuth 2.0
 
-These tables gate MCP tool access independently of HQ auth.
+These tables gate MCP tool access independently of HQ sign-in.
 
 #### `mcp_users`
 
@@ -202,15 +110,7 @@ Indexes: `user_email`, `expires_at`.
 
 Tool-level ACL, editable from HQ `/admin`. The MCP server reads this table (cached ~60s) instead of a static TS registry, so admins can change who can call what without a code deploy.
 
-Key columns: `tool_name` (PK), `allowed_roles` (String[]), `category` ('students' | 'donor_finance' | 'search' | 'future' | 'other'), `description`.
-
-### AWS Infrastructure
-
-#### `aws_resource_jobs`
-
-AWS resource creation requests with approval workflow. Key columns: `id` (UUID PK), `developer`, `action_type` (CREATE | UPDATE | DELETE), `resource_type`, `parameters` (JSON), `plan_output`, `status` (PENDING_APPROVAL | APPROVED | REJECTED | IN_PROGRESS | SUCCEEDED | FAILED), `error`, `approver`.
-
-Indexes: `developer`, `status`.
+Key columns: `tool_name` (PK), `allowed_roles` (String[]), `category` ('donor_finance' | 'school_data' | 'search' | 'skills' | 'future' | 'other' — `'students'` also exists as a category but nothing currently uses it), `description`.
 
 ## Migration Strategy
 
@@ -221,17 +121,16 @@ Indexes: `developer`, `status`.
 - Production: `pnpm db:migrate` (tracked migrations via `prisma migrate deploy`)
 - Create new migration: `pnpm --filter @lp-ai/lib-db migrate:dev`
 - Never edit a migration file after it has been applied to any environment — create a new one instead
+- For a brand-new model, generating the migration via `prisma migrate diff` (schema-file to schema-file) is safer than hand-transcribing SQL for anything with more than a handful of columns — see the `school_rollup` migration for the pattern.
 
 ## Upsert Pattern
 
-All connectors use Prisma's `upsert` method for idempotent syncs:
+All connectors use Prisma's `upsert` method for idempotent syncs, keyed on a stable natural key from the source (never a row number):
 
 ```ts
-await prisma.student.upsert({
-  where: { studentNumber: row.studentNumber },
-  update: { ...row, updatedAt: new Date() },
-  create: row,
+await prisma.schoolRollup.upsert({
+  where: { aun_schoolNumber: { aun: row.aun, schoolNumber: row.schoolNumber } },
+  update: data,
+  create: { aun: row.aun, schoolNumber: row.schoolNumber, ...data },
 });
 ```
-
-The `source_id` or equivalent unique column holds the primary key from the upstream source.

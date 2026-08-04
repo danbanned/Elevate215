@@ -1,4 +1,6 @@
-# AWS Account-Level Permissions for LP Internal AI V1
+# AWS Account-Level Permissions
+
+> Written during the original client build this repo was forked from — the IAM role/resource names (`lp-internal-*`) are carried over as the current naming convention, not renamed for Elevate215 yet.
 
 **Audience:** the AWS account admin (or anyone reviewing what we plan to do in the account) and the engineer who will run the setup guides.
 

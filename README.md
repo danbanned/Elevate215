@@ -1,6 +1,8 @@
-# LP Internal AI — V1
+# Elevate215 — Internal AI
 
-An internal AI intelligence layer for Launchpad that lets team members query Claude with live organizational data — student records, program outcomes, certifications, competency scores, finances, donations, and communications.
+An internal AI intelligence layer for Elevate215 that lets team members query Claude with live organizational data — QuickBooks finance data and PHL School Performance Model school-performance data, with the same architecture ready to take on additional sources later.
+
+This repo began as a fork of an internal AI platform originally built for a different nonprofit client (Launchpad) and was restructured into a standalone project for Elevate215: every Launchpad-specific connector, data model, and MCP tool was removed; the shared architecture (connector pattern, Postgres + pgvector storage, MCP server, HQ dashboard) was kept as the foundation.
 
 ---
 
@@ -11,7 +13,6 @@ An internal AI intelligence layer for Launchpad that lets team members query Cla
 - [Folder Structure](#folder-structure)
 - [Workspace Packages](#workspace-packages)
 - [Getting Started](#getting-started)
-- [Onboarding Resources](#onboarding-resources)
 - [Package Management](#package-management)
 - [MCP Tools](#mcp-tools)
 - [Connectors](#connectors)
@@ -27,58 +28,51 @@ Four logical layers: **data sources → connectors → storage → MCP server + 
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         DATA SOURCES                                │
 │                                                                     │
-│  Google Sheets   Google Drive   BigQuery   GiveButter   Aplos       │
-│  (students,      (docs, notes,  (BI data)  (donations)  (accounting)│
-│   outcomes,       student info)                                     │
-│   attendance,                             Slack         Roam        │
-│   finances)                               (channels)    (chat)      │
-│                                           Notion                    │
-│                                           (meeting transcripts)     │
+│  Aplos                    PHL School Performance Model             │
+│  (nonprofit accounting)   (local Excel export today — "School      │
+│                            Rollup" tab; Google Sheets API later)    │
+│                                                                     │
+│  QuickBooks (Intuit) — OAuth connect/callback + token refresh live; │
+│  accounting-data sync not yet built                                 │
 └───────────────────────┬─────────────────────────────────────────────┘
-                        │  scheduled syncs (AWS EventBridge)
+                        │  scheduled syncs (AWS EventBridge → Fargate)
                         │  manual: pnpm sync:<name>
                         ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                     CONNECTORS  (9)                                 │
+│                     CONNECTORS  (3)                                 │
 │                                                                     │
 │  Each connector runs sync() → calls runSync() → writes to          │
 │  sync_runs table. Errors are captured; HQ dashboard shows status.  │
 │                                                                     │
-│  google-sheets  google-drive  bigquery  givebutter  aplos           │
-│  slack          roam          notion                                │
+│  aplos           google-sheets (School Rollup)      quickbooks     │
 └───────────────────────┬─────────────────────────────────────────────┘
                         │
                         ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        STORAGE                                      │
 │                                                                     │
-│  Postgres 16 (AWS RDS / local Docker)                               │
-│  ├── Structured tables (Prisma ORM)                                 │
-│  │     students, staff, entity_aliases                              │
-│  │     student_phase_outcomes, student_certifications               │
-│  │     attendance_records, enrollment_snapshots                     │
-│  │     finance_snapshots                                            │
-│  │     donor_contacts, donor_gifts, donor_pipeline, donor_grants    │
-│  │     student_employment, student_postsecondary                    │
-│  │     sync_runs, usage_logs, aws_resource_jobs                     │
-│  │     mcp_users, oauth_clients, tool_permissions                   │
-│  └── Vector store (pgvector extension)                              │
-│        document_chunks  ←  OpenAI text-embedding-3-large            │
-│        (Google Drive docs + Slack + Roam → 1536-dim embeddings)     │
-│                                                                     │
-│  Entity Resolution: entity_aliases table deduplicates the same     │
-│  person across all sources using exact + fuzzy (pg_trgm) matching. │
+│  Postgres 16 + pgvector (Neon, serverless)                          │
+│  ├── finance_snapshots        — generic tab/row JSON sink (Aplos)   │
+│  ├── school_rollup             — wide table, one row per school     │
+│  │     (~45 columns, PHL School Performance Model)                  │
+│  ├── connector_credentials     — QuickBooks OAuth tokens            │
+│  ├── sync_runs, usage_logs, tool_permissions                        │
+│  ├── users/accounts/sessions   — NextAuth (HQ sign-in)               │
+│  ├── mcp_users, oauth_clients, oauth_authorization_codes,           │
+│  │     oauth_refresh_tokens    — MCP OAuth 2.0 (tool-level access)  │
+│  └── document_chunks (pgvector) — generic semantic-search sink,     │
+│        not currently populated by any live connector                │
 └───────────────────────┬─────────────────────────────────────────────┘
                         │
                         ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                   MCP SERVER  (16 tools)                            │
+│                   MCP SERVER  (5 tools)                             │
 │                                                                     │
 │  Exposes structured Prisma queries + pgvector semantic search       │
 │  as Model Context Protocol tools.                                   │
 │                                                                     │
 │  Transport A: stdio  → Claude Desktop (local)                       │
-│  Transport B: Streamable HTTP → AWS ECS Fargate behind ALB (production) │
+│  Transport B: Streamable HTTP → AWS ECS Fargate behind ALB          │
 │                                                                     │
 │  All tool calls are logged to usage_logs for adoption tracking.     │
 │  All tools return structured { error: { code, message } } on fail. │
@@ -100,14 +94,19 @@ Four logical layers: **data sources → connectors → storage → MCP server + 
                     │  /        freshness  │
                     │  /sync    sync runs  │
                     │  /tools   tool logs  │
+                    │  /admin   permissions│
                     │                      │
                     │  Auth: NextAuth v5   │
                     │  Google OAuth        │
-                    │  @launchpadphilly.org│
+                    │  domain-gated        │
+                    │  (AUTH_ALLOWED_DOMAIN│
+                    │   — see note below)  │
                     └──────────────────────┘
 ```
 
-At query time, Claude calls MCP tools → the server runs Prisma queries or pgvector similarity search → results are returned and synthesized into a natural-language answer. At sync time, EventBridge (or `pnpm sync:<name>`) triggers a connector → it upserts rows via Prisma and, for document sources, generates embeddings via OpenAI → every run writes a result to `sync_runs`.
+At query time, Claude calls MCP tools → the server runs Prisma queries or pgvector similarity search → results are returned and synthesized into a natural-language answer. At sync time, EventBridge (or `pnpm sync:<name>`) triggers a connector → it upserts rows via Prisma → every run writes a result to `sync_runs`.
+
+**Known gap to close before onboarding real Elevate215 users:** `AUTH_ALLOWED_DOMAIN` in `packages/config/src/schema.ts` still defaults to the original client's domains (`launchpadphilly.org,b-21.org`) as a placeholder — set the real env var to Elevate215's Google Workspace domain(s) before relying on the default.
 
 ---
 
@@ -118,82 +117,81 @@ At query time, Claude calls MCP tools → the server runs Prisma queries or pgve
 | Concern | Technology | Notes |
 |---|---|---|
 | Language | TypeScript 5 (strict) | `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes` |
-| Monorepo | pnpm workspaces | 17 workspace packages |
+| Monorepo | pnpm workspaces | 8 workspace packages |
 | HQ Dashboard | Next.js 14 (App Router) | Standalone Docker image |
-| Auth | NextAuth v5 (Auth.js) | Google OAuth, domain-gated to `@launchpadphilly.org` |
+| Auth | NextAuth v5 (Auth.js) | Google OAuth, domain-gated via `AUTH_ALLOWED_DOMAIN` |
 | MCP Server | `@modelcontextprotocol/sdk` | stdio + Streamable HTTP transports |
-| Embeddings | OpenAI `text-embedding-3-large` | 1536 dimensions, batch + retry helpers |
-| ORM | Prisma | All queries; `$queryRaw` only for pgvector + `percentile_cont` |
-| Database | Postgres 16 + pgvector + pg_trgm | Local Docker; AWS RDS in production |
+| Embeddings | OpenAI `text-embedding-3-large` | 1536 dimensions; wired but no live connector populates `document_chunks` yet |
+| ORM | Prisma | All queries; `$queryRaw` only for pgvector + integrity checks |
+| Database | Postgres 16 + pgvector + pg_trgm | Neon (serverless) |
 | Validation | Zod | All external data and env vars |
-| Tests | Vitest | Unit + live-DB integration + spawned MCP server integration |
+| Tests | Vitest | Unit tests across packages; one live-DB MCP integration suite (skipped unless `DATABASE_URL` is `localhost`) |
 | CI | GitHub Actions | pgvector service container; full suite on every push |
 
 ### Infrastructure & tooling
 
 | Concern | Technology |
 |---|---|
-| App hosting | AWS ECS Fargate behind ALB |
+| App hosting — `apps/hq` | EC2 + Docker (SSH-deployed; see `.github/workflows/deploy.yml`) |
+| App hosting — `apps/mcp-server`, `apps/sync` | AWS ECS Fargate |
 | Scheduling | AWS EventBridge |
-| Secrets | AWS Secrets Manager (prod) / `.env` (local) |
+| Secrets | `.env` file on the host (current); AWS Secrets Manager supported via `USE_AWS_SECRETS=true` |
 | Monitoring | Sentry |
-| BI dashboards | Metabase (self-hosted on AWS) |
-| Workflow automation | n8n (self-hosted on AWS) |
-| Data warehouse | Athena over S3 |
-| Ingestion tooling | Airbyte (self-hosted; future non-Sheets sources) |
 
 ---
 
 ## Folder Structure
 
 ```
-lp-internal-ai-v1/
+Elevate215/
 ├── apps/
 │   ├── hq/                          # Next.js 14 HQ dashboard
 │   │   ├── app/
 │   │   │   ├── page.tsx             # / — data freshness overview
-│   │   │   ├── dashboard/page.tsx   # /dashboard — analytic dashboard
 │   │   │   ├── sync/page.tsx        # /sync — connector sync run history
 │   │   │   ├── tools/page.tsx       # /tools — MCP tool call log
 │   │   │   ├── admin/page.tsx       # /admin — MCP OAuth + tool permissions
-│   │   │   ├── aws-jobs/[id]/       # /aws-jobs/:id — resource job details
+│   │   │   ├── quickbooks/          # /quickbooks/connected, /error — OAuth landing pages
+│   │   │   ├── api/quickbooks/      # OAuth connect + callback routes (thin wrappers over
+│   │   │   │                        #   connectors/quickbooks)
 │   │   │   └── api/health/route.ts  # GET /api/health (unauthenticated)
 │   │   ├── auth.ts                  # NextAuth v5 config + Google provider
-│   │   ├── middleware.ts            # Route guard
+│   │   ├── middleware.ts            # Route guard (HQ_DEV_NO_AUTH bypass in dev only)
 │   │   └── Dockerfile
-│   ├── mcp-server/                  # MCP server — 16 tools
+│   ├── mcp-server/                  # MCP server — 5 tools
 │   │   ├── src/
 │   │   │   ├── index.ts             # Entry: stdio (Claude Desktop)
 │   │   │   ├── serve-http.ts        # Entry: Streamable HTTP (ECS Fargate)
 │   │   │   ├── make-server.ts       # Tool registration
 │   │   │   ├── usage-log.ts         # Logs every tool call
-│   │   │   └── tools/               # One file per MCP tool (16 files)
-│   │   └── Dockerfile
-│   ├── aws-mcp-server/              # AWS resource management MCP server
+│   │   │   └── tools/               # One file per MCP tool
 │   │   └── Dockerfile
 │   └── sync/                        # One-off Fargate task runner for scheduled syncs
-│       └── Dockerfile
+│       └── Dockerfile               # (no package.json — builds/runs whichever connector
+│                                     #  the ECS task's `command` override selects)
 ├── packages/
-│   ├── db/                          # @lp-ai/lib-db — Prisma client, schema, seed
+│   ├── db/                          # @lp-ai/lib-db — Prisma client, schema, sync-runs helper, seed
 │   ├── config/                      # @lp-ai/lib-config — typed env loader
 │   └── embedding/                   # @lp-ai/lib-embedding — OpenAI batch helpers
-├── connectors/                      # One package per source (9 total)
-│   ├── google-sheets/               # ✅ Live — 12 sheet syncs, 26K+ records
-│   ├── givebutter/                  # ✅ Live — REST client, donors/gifts/pipeline
-│   ├── aplos/                       # ✅ Live — RSA auth, 16K+ records
-│   ├── notion/                      # ✅ Live — meeting transcript sync + embeddings
-│   └── google-drive|bigquery|slack|roam/   # skeletons
+├── connectors/                      # One package per source (3 total)
+│   ├── aplos/                       # ✅ Live — nonprofit accounting, finance_snapshots
+│   ├── google-sheets/               # ✅ Live — PHL School Performance Model "School Rollup" tab
+│   │                                #    (reads a local Excel file today; swapping to the
+│   │                                #    Sheets API is a one-file change — see the connector's
+│   │                                #    own extract-stage comment)
+│   └── quickbooks/                  # OAuth connect/callback + token-refresh live;
+│                                     #    accounting-data sync not yet built
 ├── infra/
-│   ├── postgres-init/               # SQL: CREATE EXTENSION pgvector, pg_trgm
+│   ├── ecs/                         # ECS task defs (mcp-server, sync)
 │   └── iam/                         # AWS IAM policy templates
 ├── docs/
-│   ├── architecture.md              # Detailed system overview
-│   ├── database-schema.md           # All 30 Prisma models with columns + indexes
-│   ├── mcp-server-spec.md           # All 16 tool definitions (input/output schemas)
-│   ├── entity-resolution.md         # Cross-source deduplication strategy
-│   ├── setup/                       # Phase-by-phase AWS setup guides (00–22)
+│   ├── database-schema.md           # Current Prisma models with columns + indexes
+│   ├── mcp-server-spec.md           # Current tool definitions (input/output schemas)
+│   ├── setup/                       # Phase-by-phase AWS setup guides — written for the
+│   │                                #   original client's infrastructure buildout; useful as
+│   │                                #   a pattern reference, not all content applies as-is
 │   ├── runbooks/                    # local-dev.md, credentials-checklist.md, aws-permissions.md
-│   ├── decisions/                   # Architecture Decision Records
+│   ├── reference/v0-migrations/     # Historical SQL snapshots from the original build
 │   └── data-sources/                # Per-connector specs
 ├── docker-compose.yml               # Local Postgres 16 + pgvector
 ├── vitest.config.ts
@@ -207,25 +205,21 @@ lp-internal-ai-v1/
 
 ## Workspace Packages
 
-pnpm resolves `workspace:*` references to local source at install time — no publishing required. Build order follows this graph:
+pnpm resolves `workspace:*` references to local source at install time — no publishing required.
 
 ```
 @lp-ai/lib-config          (no internal deps)
 @lp-ai/lib-db              (no internal deps)
 @lp-ai/lib-embedding       (no internal deps)
       │
-      ├── @lp-ai/connector-google-sheets   → lib-config, lib-db
-      ├── @lp-ai/connector-bigquery        → lib-config, lib-db
-      ├── @lp-ai/connector-givebutter      → lib-config, lib-db
       ├── @lp-ai/connector-aplos           → lib-config, lib-db
-      ├── @lp-ai/connector-google-drive    → lib-config, lib-db, lib-embedding
-      ├── @lp-ai/connector-slack           → lib-config, lib-db, lib-embedding
-      ├── @lp-ai/connector-roam            → lib-config, lib-db, lib-embedding
-      ├── @lp-ai/connector-notion          → lib-config, lib-db, lib-embedding
-      ├── @lp-ai/hq                        → lib-config, lib-db
-      ├── @lp-ai/mcp-server                → lib-config, lib-db, lib-embedding
-      └── @lp-ai/aws-mcp-server            → lib-config, lib-db
+      ├── @lp-ai/connector-google-sheets   → lib-config, lib-db
+      ├── @lp-ai/connector-quickbooks      → lib-config, lib-db
+      ├── @lp-ai/hq                        → lib-config, lib-db, connector-quickbooks
+      └── @lp-ai/mcp-server                → lib-config, lib-db, lib-embedding
 ```
+
+`@lp-ai/hq` depending on a connector is deliberate and the only such edge in the graph — QuickBooks is the one connector with a 3-legged OAuth flow that needs a live, publicly-reachable HTTP endpoint, which only the deployed web app can serve. `aplos` and `google-sheets` are pure batch connectors invoked via CLI/EventBridge and have no such need.
 
 ---
 
@@ -233,17 +227,16 @@ pnpm resolves `workspace:*` references to local source at install time — no pu
 
 > Full walkthrough: [docs/runbooks/local-dev.md](docs/runbooks/local-dev.md) — Credential requirements: [docs/runbooks/credentials-checklist.md](docs/runbooks/credentials-checklist.md)
 
-**Prerequisites:** Node ≥ 20, pnpm ≥ 9, Docker Desktop running.
+**Prerequisites:** Node ≥ 22, pnpm ≥ 10, Docker Desktop running (for local Postgres).
 
 ```bash
-pnpm install                                              # all 17 packages
+pnpm install
 cp .env.example .env                                      # fill in values you have
 pnpm db:up                                                # start Postgres + pgvector
 pnpm db:generate                                          # generate Prisma client
 pnpm --filter @lp-ai/lib-db push --skip-generate          # apply schema
-pnpm db:seed                                              # 3 students, donors, finance, certs
 
-pnpm -r typecheck && pnpm test                            # verify: 42 tests
+pnpm -r typecheck && pnpm test
 
 pnpm --filter @lp-ai/hq dev                               # HQ → http://localhost:3000
 pnpm --filter @lp-ai/mcp-server build
@@ -251,15 +244,7 @@ pnpm --filter @lp-ai/mcp-server start                     # MCP stdio (Claude De
 pnpm --filter @lp-ai/mcp-server start:http                # MCP HTTP → http://localhost:8080
 ```
 
-Only `DATABASE_URL` is required to boot — it defaults to the local Docker Postgres in `.env.example`. All API keys are optional at load time and validated at first use.
-
----
-
-## Onboarding Resources
-
-- New contributor checklist: [docs/reference/new-developer-playbook.md](docs/reference/new-developer-playbook.md)
-- Connector maturity and verification map: [docs/reference/connector-capability-matrix.md](docs/reference/connector-capability-matrix.md)
-- Skills workflow reference: [HOW-SKILLS-WORK.md](HOW-SKILLS-WORK.md)
+Only `DATABASE_URL` is required to boot. All API keys are optional at load time and validated at first use.
 
 ---
 
@@ -270,53 +255,32 @@ All commands run from the **repository root**. Never use `npm` or `yarn`.
 ### Installing dependencies
 
 ```bash
-# Add to a specific workspace
 pnpm add <package> --filter @lp-ai/<name>
 pnpm add -D <package> --filter @lp-ai/<name>
 
-# Add to root (shared tooling only: vitest, eslint, prettier, typescript, prisma CLI)
+# Root (shared tooling only: vitest, eslint, prettier, typescript, prisma CLI)
 pnpm add -D -w <package>
 ```
 
 ### Updating dependencies
 
 ```bash
-pnpm update -r --interactive              # interactive update across all packages
-pnpm update -r <package>                  # update one package everywhere
-pnpm update --filter @lp-ai/<name>        # update all deps in one workspace
+pnpm update -r --interactive
+pnpm update -r <package>
+pnpm update --filter @lp-ai/<name>
 ```
 
 After updating, commit all changed `package.json` files and `pnpm-lock.yaml` together.
-
-### Removing dependencies
-
-```bash
-pnpm remove <package> --filter @lp-ai/<name>
-```
-
-### Adding a new internal dependency
-
-Add the `workspace:*` reference manually in the consuming package's `package.json`, then run `pnpm install`:
-
-```jsonc
-// e.g. connectors/givebutter/package.json
-{
-  "dependencies": {
-    "@lp-ai/lib-config": "workspace:*",
-    "@lp-ai/lib-db": "workspace:*"
-  }
-}
-```
 
 ### After editing the Prisma schema
 
 ```bash
 pnpm db:generate                                          # regenerate Prisma client
 pnpm --filter @lp-ai/lib-db push --skip-generate          # local dev (no migration file)
-pnpm db:migrate                                           # production/staging (tracked migration)
+pnpm db:migrate                                           # production (tracked migration)
 ```
 
-Use `push` for local iteration. Use `migrate` for any change that must be tracked and replayed on the production RDS instance.
+Use `push` for local iteration. Use `migrate` for any change that must be tracked and replayed on the production database. **Never** run `deleteMany`/`TRUNCATE` before an upsert in connector code — see the sync-safety rule in `CLAUDE.md`.
 
 ---
 
@@ -326,22 +290,11 @@ All tools return structured JSON. Errors use `{ error: { code, message } }`.
 
 | Tool | Description |
 |---|---|
-| `get_student_info` | Student profile + aliases from Google Drive seed doc |
-| `get_entity_brief` | Composite: profile + phase progression + certs + recent mentions + donor history |
-| `get_finance_brief` | Composite: budget summary + actuals + grants + giving pipeline |
-| `query_students` | Population stats + filtered student lists |
-| `query_outcomes` | Phase progression (Foundations → 101 → Lightspeed → LiftOff) |
-| `query_enrollment` | Enrollment stats by phase, school, cohort, race |
-| `query_certifications` | PCEP exam results and scores |
-| `query_competency` | Per-student Beacon competency scores |
-| `query_attendance` | Unified attendance across three cohort formats |
-| `query_employment` | Post-program employment data (employer, wages, hours, exit codes) |
-| `query_postsecondary` | College enrollment tracking (National Student Clearinghouse) |
-| `query_finances` | Budgets, actuals, forecasts, stipends, CRM giving/pipeline/grants |
-| `query_donors` | Building21 Development CRM donor lookup |
-| `search_conversations` | Semantic search over Drive docs (Slack/transcripts in V0.2) |
-| `search_by_person` | Scoped document search by student or staff name |
-| `search_documents` | Raw document chunk search with optional entity filter |
+| `query_finances` | Look up financial data from `finance_snapshots` (Aplos accounting tabs) |
+| `get_finance_brief` | Fund balances, chart-of-accounts summary, recent transactions |
+| `query_school_rollup` | School-level performance/enrollment data from the PHL School Performance Model — PSSA/Keystone proficiency, predicted-vs-actual residuals, performance bands, charter enrollment/fill-tier |
+| `search_documents` | Semantic search over `document_chunks` (pgvector) — not currently populated by any live connector |
+| `skill_finance_audit` | Generates multi-view financial reports (monthly close, audit prep, board financials, fund reconciliation, ad-hoc queries) |
 
 Full input/output schemas: [docs/mcp-server-spec.md](docs/mcp-server-spec.md)
 
@@ -351,14 +304,9 @@ Full input/output schemas: [docs/mcp-server-spec.md](docs/mcp-server-spec.md)
 
 | Connector | Source | Destination | Status |
 |---|---|---|---|
-| `google-sheets` | Launchpad Dashboard + Outcomes sheets (12 spreadsheets) | Postgres | ✅ Live — all 12 syncs ported; 26K+ records |
-| `google-drive` | Drive docs folder | Postgres + pgvector | Skeleton — creds available, implementation pending |
-| `bigquery` | `lp-internal-ai` BigQuery project | Postgres | Skeleton — creds available, implementation pending |
-| `givebutter` | GiveButter donation platform | `donor_contacts`, `donor_gifts`, `donor_pipeline` | ✅ Live — REST client syncing |
-| `aplos` | Aplos nonprofit accounting | Postgres (finance snapshots) | ✅ Live — RSA-decryption auth; 16K+ records |
-| `notion` | Notion meeting transcripts database | `document_chunks` (pgvector) | ✅ Live — meeting transcripts with embeddings |
-| `slack` | Designated Slack channels | pgvector | Skeleton — awaiting `SLACK_BOT_TOKEN` |
-| `roam` | Roam chat / messaging | pgvector | Skeleton — awaiting `ROAM_API_KEY` |
+| `aplos` | Aplos nonprofit accounting | `finance_snapshots` | ✅ Live — RSA-decryption auth |
+| `google-sheets` | PHL School Performance Model, "School Rollup" tab only | `school_rollup` | ✅ Live — reads a local Excel export today; see connector comments for the Google Sheets API swap point |
+| `quickbooks` | Intuit QuickBooks (OAuth) | `connector_credentials` | OAuth connect/callback + token refresh live; no accounting-data sync yet |
 
 Each connector's `sync()` is wrapped by `runSync()`, which writes a success/error row to `sync_runs` on every run — visible in the HQ `/sync` page.
 
@@ -368,19 +316,14 @@ Each connector's `sync()` is wrapped by `runSync()`, which writes a success/erro
 
 | Area | State |
 |---|---|
-| Typecheck | ✅ All 17 packages pass |
-| Tests | ✅ 42 tests, 6 files (Vitest) |
-| Local DB | ✅ Postgres 16 + pgvector via Docker Compose |
-| MCP tools | ✅ All 16 wired to real Prisma queries |
-| HQ dashboard | ✅ Renders against live Postgres; auth gated; analytic dashboard ported |
-| Google Sheets connector | ✅ All 12 sheet syncs live; 26K+ records |
-| GiveButter connector | ✅ REST client syncing donors, gifts, pipeline |
-| Aplos connector | ✅ RSA-decryption auth; 16K+ records |
-| Notion connector | ✅ Meeting transcript sync with embeddings |
-| OpenAI embeddings | ✅ `text-embedding-3-large` verified and live |
-| AWS account | ✅ Account 851725317896, IAM user configured, us-east-1 |
-| Remaining connectors | 🟡 Skeletons — google-drive, bigquery, slack, roam |
-| AWS production | 🟡 Docker images + ECS task defs built; deployment in progress |
+| Typecheck | ✅ Passes across all workspace packages |
+| MCP tools | ✅ All 5 wired to real Prisma queries |
+| HQ dashboard | ✅ Renders against live Postgres; auth gated |
+| Aplos connector | ✅ RSA-decryption auth, live |
+| School Rollup connector | ✅ Live — 301 schools loaded, validated |
+| QuickBooks connector | 🟡 OAuth + token refresh built; accounting-data sync not yet implemented |
+| `apps/hq` production deploy | 🟡 EC2 + Docker, SSH-based; being finalized |
+| `apps/mcp-server` / `apps/sync` production deploy | AWS ECS Fargate |
 | CI | ✅ GitHub Actions with pgvector service container |
 
-See [docs/runbooks/credentials-checklist.md](docs/runbooks/credentials-checklist.md) for credential requirements. See [docs/setup/README.md](docs/setup/README.md) for the phase-by-phase AWS production setup status.
+See [docs/runbooks/credentials-checklist.md](docs/runbooks/credentials-checklist.md) for credential requirements.
