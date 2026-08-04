@@ -1,26 +1,61 @@
 import { prisma } from '@lp-ai/lib-db';
+import { formatExactTime, formatRelativeTime } from '../../lib/format';
 
 export const dynamic = 'force-dynamic';
 
-const CONNECTORS = [
-  'google-sheets',
-  'aplos',
-] as const;
+// Aplos is Launchpad's own internal accounting system — it must never appear
+// in Elevate215's dashboard. The connector code stays in connectors/aplos/ as
+// a reference pattern, it's just never listed here.
+const CONNECTORS = ['quickbooks', 'google-sheets'] as const;
+
+const CONNECTOR_LABELS: Record<(typeof CONNECTORS)[number], string> = {
+  quickbooks: 'QuickBooks',
+  'google-sheets': 'School Performance Data',
+};
+
+type PlainStatus = 'up-to-date' | 'updating' | 'nothing-new' | 'needs-attention' | 'never-run';
+
+function toPlainStatus(status: string | null): PlainStatus {
+  if (status === null) return 'never-run';
+  if (status === 'ok') return 'up-to-date';
+  if (status === 'running') return 'updating';
+  if (status === 'noop') return 'nothing-new';
+  return 'needs-attention';
+}
+
+const PLAIN_STATUS_LABEL: Record<PlainStatus, string> = {
+  'up-to-date': 'Up to date',
+  updating: 'Updating…',
+  'nothing-new': 'Nothing new yet',
+  'needs-attention': 'Needs attention',
+  'never-run': 'Not set up yet',
+};
+
+const PLAIN_STATUS_CLASS: Record<PlainStatus, string> = {
+  'up-to-date': 'bg-green-50 text-green-700',
+  updating: 'bg-blue-50 text-blue-700',
+  'nothing-new': 'bg-slate-100 text-slate-700',
+  'needs-attention': 'bg-red-50 text-red-700',
+  'never-run': 'bg-slate-100 text-slate-500',
+};
+
+const DOT_CLASS: Record<PlainStatus, string> = {
+  'up-to-date': 'bg-green-400',
+  updating: 'bg-blue-400',
+  'nothing-new': 'bg-slate-300',
+  'needs-attention': 'bg-red-400',
+  'never-run': 'bg-slate-200',
+};
 
 interface ConnectorRow {
-  connector: string;
-  lastStartedAt: Date | null;
+  connector: (typeof CONNECTORS)[number];
   lastFinishedAt: Date | null;
-  lastStatus: string | null;
-  lastError: string | null;
-  lastRecordsUpserted: number | null;
+  lastStatus: PlainStatus;
   recent: Array<{
     startedAt: Date;
-    finishedAt: Date | null;
-    status: string;
-    recordsUpserted: number;
+    status: PlainStatus;
+    rawStatus: string;
     error: string | null;
-    durationMs: number | null;
   }>;
 }
 
@@ -35,50 +70,35 @@ async function fetchConnectorStatus(): Promise<ConnectorRow[]> {
       const latest = recent[0];
       return {
         connector,
-        lastStartedAt: latest?.startedAt ?? null,
         lastFinishedAt: latest?.finishedAt ?? null,
-        lastStatus: latest?.status ?? null,
-        lastError: latest?.error ?? null,
-        lastRecordsUpserted: latest?.recordsUpserted ?? null,
+        lastStatus: toPlainStatus(latest?.status ?? null),
         recent: recent.map((r) => ({
           startedAt: r.startedAt,
-          finishedAt: r.finishedAt,
-          status: r.status,
-          recordsUpserted: r.recordsUpserted,
+          status: toPlainStatus(r.status),
+          rawStatus: r.status,
           error: r.error,
-          durationMs:
-            r.finishedAt && r.startedAt
-              ? r.finishedAt.getTime() - r.startedAt.getTime()
-              : null,
         })),
       };
     }),
   );
 }
 
-function StatusBadge({ status }: { status: string | null }) {
-  if (!status) return <span className="text-muted">never run</span>;
-  const cls =
-    status === 'ok'
-      ? 'bg-green-50 text-green-700'
-      : status === 'running'
-        ? 'bg-blue-50 text-blue-700'
-        : status === 'noop'
-          ? 'bg-slate-100 text-slate-700'
-          : 'bg-red-50 text-red-700';
+function StatusBadge({ status }: { status: PlainStatus }): JSX.Element {
   return (
-    <span className={`inline-flex rounded px-2 py-0.5 text-xs ${cls}`}>{status}</span>
+    <span className={`inline-flex rounded px-2 py-0.5 text-xs ${PLAIN_STATUS_CLASS[status]}`}>
+      {PLAIN_STATUS_LABEL[status]}
+    </span>
   );
 }
 
-export default async function SyncPage() {
+export default async function DataUpdatesPage(): Promise<JSX.Element> {
   const rows = await fetchConnectorStatus();
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-semibold text-ink">Sync status</h1>
+        <h1 className="text-2xl font-semibold text-ink">Data updates</h1>
         <p className="mt-1 text-sm text-muted">
-          Last and recent runs for each connector, from <code>sync_runs</code>.
+          Where your information comes from and when it last refreshed.
         </p>
       </header>
 
@@ -86,49 +106,44 @@ export default async function SyncPage() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
             <tr>
-              <th className="px-4 py-2">Connector</th>
+              <th className="px-4 py-2">Data source</th>
               <th className="px-4 py-2">Status</th>
-              <th className="px-4 py-2">Last run</th>
-              <th className="px-4 py-2">Records</th>
+              <th className="px-4 py-2">Last updated</th>
               <th className="px-4 py-2">Recent</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.connector} className="border-t align-top">
-                <td className="px-4 py-3 font-medium">{r.connector}</td>
+                <td className="px-4 py-3 font-medium">{CONNECTOR_LABELS[r.connector]}</td>
                 <td className="px-4 py-3">
                   <StatusBadge status={r.lastStatus} />
                 </td>
                 <td className="px-4 py-3 text-xs text-muted">
-                  {r.lastStartedAt
-                    ? r.lastStartedAt.toISOString().slice(0, 19) + 'Z'
-                    : '—'}
-                </td>
-                <td className="px-4 py-3 tabular-nums">
-                  {r.lastRecordsUpserted ?? '—'}
+                  {r.lastFinishedAt ? (
+                    <time
+                      dateTime={r.lastFinishedAt.toISOString()}
+                      title={formatExactTime(r.lastFinishedAt)}
+                    >
+                      {formatRelativeTime(r.lastFinishedAt)}
+                    </time>
+                  ) : (
+                    'Not yet'
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex flex-wrap gap-1">
                     {r.recent.map((run, i) => (
                       <span
                         key={i}
-                        title={`${run.startedAt.toISOString()} · ${run.status}${
+                        title={`${formatExactTime(run.startedAt)} · ${PLAIN_STATUS_LABEL[run.status]}${
                           run.error ? ' · ' + run.error : ''
                         }`}
-                        className={`inline-block h-2 w-6 rounded ${
-                          run.status === 'ok'
-                            ? 'bg-green-400'
-                            : run.status === 'noop'
-                              ? 'bg-slate-300'
-                              : run.status === 'running'
-                                ? 'bg-blue-400'
-                                : 'bg-red-400'
-                        }`}
+                        className={`inline-block h-2 w-6 rounded ${DOT_CLASS[run.status]}`}
                       />
                     ))}
                     {r.recent.length === 0 && (
-                      <span className="text-xs text-muted">no runs</span>
+                      <span className="text-xs text-muted">no updates yet</span>
                     )}
                   </div>
                 </td>

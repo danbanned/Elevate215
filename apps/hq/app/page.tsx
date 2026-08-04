@@ -1,391 +1,146 @@
 import { prisma } from '@lp-ai/lib-db';
-import { TokenUsageDateFilter } from './components/TokenUsageDateFilter';
+import { formatExactTime, formatRelativeTime } from '../lib/format';
 
 export const dynamic = 'force-dynamic';
 
-interface SourceFreshness {
-  source: string;
-  table: string;
-  rowCount: number;
-  lastSyncedAt: Date | null;
+interface DataSourceStatus {
+  name: string;
+  state: 'updated' | 'connected-pending' | 'not-connected';
+  when: Date | null;
 }
 
-interface TokenUsageRow {
-  user_id: string | null;
-  user_email: string | null;
-  call_count: string;
-  input_tokens: string | null;
-  output_tokens: string | null;
-  cache_read_tokens: string | null;
-  cache_creation_tokens: string | null;
-  last_seen: Date | null;
-}
-
-interface TokenSummary {
-  total_calls: string;
-  total_input: string | null;
-  total_output: string | null;
-  total_cache_read: string | null;
-  total_cache_creation: string | null;
-  distinct_users: string;
-  calls_with_tokens: string;
-}
-
-async function fetchFreshness(): Promise<SourceFreshness[]> {
-  const [finance, chunks] = await Promise.all([
-    latest('finance_snapshots', 'last_synced_at'),
-    latest('document_chunks', 'synced_at'),
+async function fetchDataSourceStatus(): Promise<DataSourceStatus[]> {
+  const [qbCredential, qbLastOkRun, sheetsLastOkRun] = await Promise.all([
+    prisma.connectorCredential.findFirst({ where: { connector: 'quickbooks' } }),
+    prisma.syncRun.findFirst({
+      where: { connector: 'quickbooks', status: 'ok' },
+      orderBy: { finishedAt: 'desc' },
+    }),
+    prisma.syncRun.findFirst({
+      where: { connector: 'google-sheets', status: 'ok' },
+      orderBy: { finishedAt: 'desc' },
+    }),
   ]);
 
-  return [
-    { source: 'Finance (Aplos)', table: 'finance_snapshots', ...finance },
-    { source: 'Vector chunks', table: 'document_chunks', ...chunks },
-  ];
+  const quickbooks: DataSourceStatus = qbLastOkRun?.finishedAt
+    ? { name: 'QuickBooks', state: 'updated', when: qbLastOkRun.finishedAt }
+    : qbCredential
+      ? { name: 'QuickBooks', state: 'connected-pending', when: null }
+      : { name: 'QuickBooks', state: 'not-connected', when: null };
+
+  const schoolData: DataSourceStatus = sheetsLastOkRun?.finishedAt
+    ? { name: 'School Performance Data', state: 'updated', when: sheetsLastOkRun.finishedAt }
+    : { name: 'School Performance Data', state: 'not-connected', when: null };
+
+  return [schoolData, quickbooks];
 }
 
-const ALLOWED_TABLES = new Set(['finance_snapshots', 'document_chunks']);
-const ALLOWED_COLUMNS = new Set(['synced_at', 'last_synced_at']);
-
-async function latest(
-  table: string,
-  column: string,
-): Promise<{ rowCount: number; lastSyncedAt: Date | null }> {
-  if (!ALLOWED_TABLES.has(table) || !ALLOWED_COLUMNS.has(column)) {
-    throw new Error(`Disallowed table/column: ${table}.${column}`);
+function DataSourceLine({ source }: { source: DataSourceStatus }): JSX.Element {
+  if (source.state === 'updated' && source.when) {
+    return (
+      <div className="rounded-lg border bg-white p-4 shadow-sm">
+        <div className="text-sm font-medium text-ink">{source.name}</div>
+        <div className="mt-1 text-sm text-green-700">
+          Updated{' '}
+          <time dateTime={source.when.toISOString()} title={formatExactTime(source.when)}>
+            {formatRelativeTime(source.when)}
+          </time>
+        </div>
+      </div>
+    );
   }
-  const rows = await prisma.$queryRawUnsafe<
-    Array<{ count: bigint; last_at: Date | null }>
-  >(
-    `SELECT COUNT(*)::bigint AS count, MAX("${column}") AS last_at FROM "${table}"`,
-  );
-  const r = rows[0];
-  return {
-    rowCount: r ? Number(r.count) : 0,
-    lastSyncedAt: r?.last_at ?? null,
-  };
-}
-
-async function fetchRecentUsage(): Promise<
-  Array<{ id: string; toolName: string; durationMs: number | null; error: string | null; calledAt: Date }>
-> {
-  const rows = await prisma.usageLog.findMany({
-    orderBy: { calledAt: 'desc' },
-    take: 10,
-  });
-  return rows.map((r) => ({
-    id: r.id,
-    toolName: r.toolName,
-    durationMs: r.durationMs,
-    error: r.error,
-    calledAt: r.calledAt,
-  }));
-}
-
-function resolveDateRange(searchParams: { [k: string]: string | string[] | undefined }): {
-  from: Date | null;
-  to: Date | null;
-  label: string;
-} {
-  const preset = typeof searchParams['tokens_preset'] === 'string'
-    ? searchParams['tokens_preset']
-    : '30d';
-
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
-
-  if (preset === 'all') {
-    return { from: null, to: null, label: 'All time' };
+  if (source.state === 'connected-pending') {
+    return (
+      <div className="rounded-lg border bg-white p-4 shadow-sm">
+        <div className="text-sm font-medium text-ink">{source.name}</div>
+        <div className="mt-1 text-sm text-amber-700">Connected — waiting on the first update</div>
+      </div>
+    );
   }
-  if (preset === 'custom') {
-    const fromStr = typeof searchParams['tokens_from'] === 'string' ? searchParams['tokens_from'] : null;
-    const toStr = typeof searchParams['tokens_to'] === 'string' ? searchParams['tokens_to'] : null;
-    const from = fromStr ? new Date(`${fromStr}T00:00:00`) : null;
-    const to = toStr ? new Date(`${toStr}T23:59:59`) : null;
-    const label = `${fromStr ?? '—'} → ${toStr ?? '—'}`;
-    return { from, to, label };
-  }
-
-  const map: Record<string, number> = { '7d': 7, '30d': 30, '90d': 90 };
-  const days = map[preset] ?? 30;
-  const from = new Date(now.getTime() - (days - 1) * 86_400_000);
-  from.setHours(0, 0, 0, 0);
-  return { from, to: today, label: `Last ${String(days)} days` };
-}
-
-async function fetchTokenUsage(from: Date | null, to: Date | null): Promise<{
-  perUser: TokenUsageRow[];
-  summary: TokenSummary | null;
-}> {
-  const clauses: string[] = [];
-  const params: unknown[] = [];
-  if (from) {
-    params.push(from);
-    clauses.push(`called_at >= $${String(params.length)}`);
-  }
-  if (to) {
-    params.push(to);
-    clauses.push(`called_at <= $${String(params.length)}`);
-  }
-  const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
-
-  const perUser = await prisma.$queryRawUnsafe<TokenUsageRow[]>(
-    `
-    SELECT
-      anthropic_user_id        AS user_id,
-      anthropic_user_email     AS user_email,
-      COUNT(*)::text           AS call_count,
-      SUM(input_tokens)::text  AS input_tokens,
-      SUM(output_tokens)::text AS output_tokens,
-      SUM(cache_read_tokens)::text     AS cache_read_tokens,
-      SUM(cache_creation_tokens)::text AS cache_creation_tokens,
-      MAX(called_at) AS last_seen
-    FROM usage_logs
-    ${where}
-    GROUP BY anthropic_user_id, anthropic_user_email
-    ORDER BY SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)) DESC NULLS LAST,
-             COUNT(*) DESC
-    LIMIT 50
-    `,
-    ...params,
-  );
-
-  const summaryRows = await prisma.$queryRawUnsafe<TokenSummary[]>(
-    `
-    SELECT
-      COUNT(*)::text                                              AS total_calls,
-      SUM(input_tokens)::text                                     AS total_input,
-      SUM(output_tokens)::text                                    AS total_output,
-      SUM(cache_read_tokens)::text                                AS total_cache_read,
-      SUM(cache_creation_tokens)::text                            AS total_cache_creation,
-      COUNT(DISTINCT COALESCE(anthropic_user_id, anthropic_user_email))::text AS distinct_users,
-      SUM(CASE WHEN input_tokens IS NOT NULL OR output_tokens IS NOT NULL THEN 1 ELSE 0 END)::text AS calls_with_tokens
-    FROM usage_logs
-    ${where}
-    `,
-    ...params,
-  );
-
-  return { perUser, summary: summaryRows[0] ?? null };
-}
-
-function fmtInt(s: string | null | undefined): string {
-  if (s == null) return '—';
-  const n = Number(s);
-  if (!Number.isFinite(n)) return '—';
-  return n.toLocaleString();
-}
-
-function TokenStatCard({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-}): JSX.Element {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="text-xs font-medium uppercase tracking-wide text-muted">{label}</div>
-      <div className="mt-1.5 text-2xl font-semibold tabular-nums text-ink">{value}</div>
-      {hint && <div className="mt-0.5 text-xs text-muted">{hint}</div>}
+    <div className="rounded-lg border bg-white p-4 shadow-sm">
+      <div className="text-sm font-medium text-ink">{source.name}</div>
+      <div className="mt-1 text-sm text-muted">Not yet connected</div>
     </div>
   );
 }
 
-interface PageProps {
-  searchParams: { [key: string]: string | string[] | undefined };
+const SCHOOL_QUESTIONS = [
+  'Which charter schools have the most unused seats?',
+  'Which schools are beating expectations in math?',
+];
+
+const FINANCE_QUESTIONS = [
+  "What's our revenue vs. budget this quarter?",
+  'Which departments are over budget?',
+];
+
+async function fetchWeeklyQuestionCount(): Promise<number> {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  return prisma.usageLog.count({ where: { calledAt: { gte: sevenDaysAgo } } });
 }
 
-export default async function HomePage({ searchParams }: PageProps): Promise<JSX.Element> {
-  const range = resolveDateRange(searchParams);
-
-  const [freshness, usage, tokens] = await Promise.all([
-    fetchFreshness(),
-    fetchRecentUsage(),
-    fetchTokenUsage(range.from, range.to),
+export default async function OverviewPage(): Promise<JSX.Element> {
+  const [sources, questionCount] = await Promise.all([
+    fetchDataSourceStatus(),
+    fetchWeeklyQuestionCount(),
   ]);
 
-  const totalTokens = (() => {
-    const i = parseInt(tokens.summary?.total_input ?? '0', 10) || 0;
-    const o = parseInt(tokens.summary?.total_output ?? '0', 10) || 0;
-    return i + o;
-  })();
-  const callsWithTokens = parseInt(tokens.summary?.calls_with_tokens ?? '0', 10) || 0;
-  const totalCalls = parseInt(tokens.summary?.total_calls ?? '0', 10) || 0;
-  const noTokenData = totalCalls > 0 && callsWithTokens === 0;
+  const schoolDataLive = sources.some((s) => s.name === 'School Performance Data' && s.state === 'updated');
+  const quickBooksLive = sources.some((s) => s.name === 'QuickBooks' && s.state !== 'not-connected');
+  const exampleQuestions = [
+    ...(schoolDataLive ? SCHOOL_QUESTIONS : []),
+    ...(quickBooksLive ? FINANCE_QUESTIONS : []),
+  ];
 
   return (
     <div className="space-y-12">
       <section>
-        <h1 className="text-2xl font-semibold text-ink">Data freshness</h1>
-        <p className="mt-1 text-sm text-muted">
-          Row count + most recent sync timestamp per backing table.
-        </p>
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {freshness.map((f) => (
-            <div key={f.table} className="rounded-lg border bg-white p-4 shadow-sm">
-              <div className="text-sm font-medium text-ink">{f.source}</div>
-              <div className="mt-1 text-xs text-muted">{f.table}</div>
-              <div className="mt-3 text-2xl font-semibold tabular-nums">
-                {f.rowCount.toLocaleString()}
-              </div>
-              <div className="mt-1 text-xs text-muted">
-                {f.lastSyncedAt
-                  ? `last synced ${f.lastSyncedAt.toISOString().slice(0, 16)}Z`
-                  : 'no data yet'}
-              </div>
-            </div>
+        <h1 className="text-2xl font-semibold text-ink">Is your data current?</h1>
+        <p className="mt-1 text-sm text-muted">When each of your data sources last updated.</p>
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {sources.map((s) => (
+            <DataSourceLine key={s.name} source={s} />
           ))}
         </div>
       </section>
 
-      <section id="token-usage" className="scroll-mt-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-xl font-semibold text-ink">Claude token usage</h2>
-            <p className="mt-1 text-sm text-muted">
-              Token consumption by user · <span className="text-ink">{range.label}</span>
+      <section>
+        <h2 className="text-xl font-semibold text-ink">What can you ask?</h2>
+        <p className="mt-1 text-sm text-muted">
+          Example questions the system can answer right now, based on which data sources are live.
+        </p>
+        <div className="mt-4 rounded-lg border bg-white shadow-sm">
+          {exampleQuestions.length === 0 ? (
+            <p className="px-4 py-6 text-sm text-muted">
+              Once a data source is connected, example questions will show up here.
             </p>
-          </div>
-          <TokenUsageDateFilter />
-        </div>
-
-        {noTokenData && (
-          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            <div className="font-medium">Waiting on data source</div>
-            <p className="mt-1 text-xs">
-              The schema is ready, but no usage rows have token counts yet. Token data is populated by the
-              Anthropic Admin API connector — see{' '}
-              <code className="rounded bg-amber-100 px-1 py-0.5">docs/setup/22-anthropic-usage-connector.md</code>
-              . Until then, the table below shows tool-call activity only.
-            </p>
-          </div>
-        )}
-
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <TokenStatCard
-            label="Total tokens"
-            value={fmtInt(totalTokens.toString())}
-            hint="Input + output"
-          />
-          <TokenStatCard
-            label="Input tokens"
-            value={fmtInt(tokens.summary?.total_input ?? '0')}
-          />
-          <TokenStatCard
-            label="Output tokens"
-            value={fmtInt(tokens.summary?.total_output ?? '0')}
-          />
-          <TokenStatCard
-            label="Distinct users"
-            value={fmtInt(tokens.summary?.distinct_users ?? '0')}
-            hint={`${fmtInt(tokens.summary?.total_calls ?? '0')} total calls`}
-          />
-        </div>
-
-        <div className="mt-4 overflow-hidden rounded-lg border bg-white shadow-sm">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
-              <tr>
-                <th className="px-4 py-2">User</th>
-                <th className="px-4 py-2 text-right">Calls</th>
-                <th className="px-4 py-2 text-right">Input</th>
-                <th className="px-4 py-2 text-right">Output</th>
-                <th className="px-4 py-2 text-right">Cache read</th>
-                <th className="px-4 py-2 text-right">Total</th>
-                <th className="px-4 py-2">Last seen</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tokens.perUser.length === 0 ? (
-                <tr>
-                  <td className="px-4 py-6 text-center text-muted" colSpan={7}>
-                    No tool calls recorded in this range.
-                  </td>
-                </tr>
-              ) : (
-                tokens.perUser.map((r) => {
-                  const input = parseInt(r.input_tokens ?? '0', 10) || 0;
-                  const output = parseInt(r.output_tokens ?? '0', 10) || 0;
-                  const total = input + output;
-                  const label = r.user_email ?? r.user_id ?? '— unknown —';
-                  const unknown = !r.user_email && !r.user_id;
-                  return (
-                    <tr key={`${r.user_id ?? ''}|${r.user_email ?? ''}`} className="border-t">
-                      <td className={`px-4 py-2 ${unknown ? 'italic text-muted' : 'text-ink'}`}>
-                        {label}
-                        {r.user_email && r.user_id && (
-                          <span className="ml-2 text-xs text-muted">({r.user_id.slice(0, 8)}…)</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2 text-right tabular-nums">{fmtInt(r.call_count)}</td>
-                      <td className="px-4 py-2 text-right tabular-nums text-muted">{fmtInt(r.input_tokens)}</td>
-                      <td className="px-4 py-2 text-right tabular-nums text-muted">{fmtInt(r.output_tokens)}</td>
-                      <td className="px-4 py-2 text-right tabular-nums text-muted">{fmtInt(r.cache_read_tokens)}</td>
-                      <td className="px-4 py-2 text-right tabular-nums font-medium text-ink">
-                        {total > 0 ? total.toLocaleString() : '—'}
-                      </td>
-                      <td className="px-4 py-2 text-xs text-muted">
-                        {r.last_seen ? r.last_seen.toISOString().slice(0, 19).replace('T', ' ') + 'Z' : '—'}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+          ) : (
+            <ul className="divide-y">
+              {exampleQuestions.map((q) => (
+                <li key={q} className="px-4 py-3 text-sm text-ink">
+                  &ldquo;{q}&rdquo;
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </section>
 
       <section>
-        <h2 className="text-xl font-semibold text-ink">Recent tool calls</h2>
-        <p className="mt-1 text-sm text-muted">
-          Most recent 10 MCP tool invocations from <code>usage_logs</code>.
-        </p>
-        <div className="mt-4 overflow-hidden rounded-lg border bg-white shadow-sm">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
-              <tr>
-                <th className="px-4 py-2">Tool</th>
-                <th className="px-4 py-2">Duration</th>
-                <th className="px-4 py-2">Status</th>
-                <th className="px-4 py-2">Called at</th>
-              </tr>
-            </thead>
-            <tbody>
-              {usage.length === 0 ? (
-                <tr>
-                  <td className="px-4 py-6 text-center text-muted" colSpan={4}>
-                    No tool calls yet.
-                  </td>
-                </tr>
-              ) : (
-                usage.map((u) => (
-                  <tr key={u.id} className="border-t">
-                    <td className="px-4 py-2 font-mono text-xs">{u.toolName}</td>
-                    <td className="px-4 py-2 tabular-nums">
-                      {u.durationMs !== null ? `${u.durationMs.toString()} ms` : '—'}
-                    </td>
-                    <td className="px-4 py-2">
-                      {u.error ? (
-                        <span className="inline-flex rounded bg-red-50 px-2 py-0.5 text-xs text-red-700">
-                          error
-                        </span>
-                      ) : (
-                        <span className="inline-flex rounded bg-green-50 px-2 py-0.5 text-xs text-green-700">
-                          ok
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2 text-xs text-muted">
-                      {u.calledAt.toISOString().slice(0, 19)}Z
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        <h2 className="text-xl font-semibold text-ink">Is your team using it?</h2>
+        <p className="mt-1 text-sm text-muted">Questions asked in the last 7 days.</p>
+        <div className="mt-4 rounded-lg border bg-white p-4 shadow-sm">
+          {questionCount === 0 ? (
+            <p className="text-sm text-muted">No one has asked a question in the last 7 days yet.</p>
+          ) : (
+            <p className="text-2xl font-semibold tabular-nums text-ink">
+              {questionCount.toLocaleString()}{' '}
+              <span className="text-sm font-normal text-muted">
+                question{questionCount === 1 ? '' : 's'} asked in the last 7 days
+              </span>
+            </p>
+          )}
         </div>
       </section>
     </div>

@@ -62,10 +62,10 @@ export default async function AdminPage() {
       <header>
         <h1 className="text-2xl font-semibold text-ink">MCP user admin</h1>
         <p className="mt-1 text-sm text-muted">
-          Manage who can use the LP Internal AI MCP server from Claude. Promote
+          Manage who can use the Elevate215 MCP server from Claude. Promote
           new sign-ins from <code>PENDING</code> → <code>ACTIVE</code> and assign roles.
           Roles control which tools they can call (see{' '}
-          <a className="underline" href="https://github.com/ckunkel/lp-internal-ai-v1/blob/master/docs/setup/23-mcp-oauth.md">
+          <a className="underline" href="https://github.com/Drdraqounof/Elevate215/blob/main/docs/setup/23-mcp-oauth.md">
             docs/setup/23-mcp-oauth.md
           </a>{' '}
           for the tool ↔ role matrix).
@@ -189,7 +189,7 @@ export default async function AdminPage() {
           <input
             name="email"
             type="email"
-            placeholder="someone@launchpadphilly.org"
+            placeholder="someone@yourorganization.org"
             required
             className="rounded border px-2 py-1 text-sm"
           />

@@ -4,8 +4,8 @@ import { Nav } from '@/components/Nav';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'LP Internal AI · HQ',
-  description: 'Operations dashboard for LP Internal AI',
+  title: 'Elevate215 · HQ',
+  description: 'Elevate215 operations dashboard',
 };
 
 export default function RootLayout({

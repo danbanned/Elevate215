@@ -1,11 +1,23 @@
 import { signIn } from '@/auth';
 
+const ALLOWED_DOMAINS = (process.env['AUTH_ALLOWED_DOMAIN'] ?? 'launchpadphilly.org')
+  .split(',')
+  .map((d) => d.trim())
+  .filter(Boolean);
+
 export default function SignInPage() {
   return (
     <div className="mx-auto max-w-sm rounded-lg border bg-white p-8 shadow-sm">
       <h1 className="text-xl font-semibold text-ink">Sign in</h1>
       <p className="mt-2 text-sm text-muted">
-        Restricted to <code>@launchpadphilly.org</code> Google accounts.
+        Restricted to{' '}
+        {ALLOWED_DOMAINS.map((d, i) => (
+          <span key={d}>
+            {i > 0 && ' / '}
+            <code>@{d}</code>
+          </span>
+        ))}{' '}
+        Google accounts.
       </p>
       <form
         className="mt-6"
