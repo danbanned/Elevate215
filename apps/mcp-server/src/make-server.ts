@@ -3,6 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerQueryFinances } from './tools/query-finances.js';
 import { registerGetFinanceBrief } from './tools/get-finance-brief.js';
 import { registerSearchDocuments } from './tools/search-documents.js';
+import { registerQuerySchoolRollup } from './tools/query-school-rollup.js';
 
 import { registerSkillFinanceAudit } from './tools/skill-finance-audit.js';
 
@@ -18,6 +19,7 @@ export function makeServer(): McpServer {
   registerQueryFinances(server);
   registerGetFinanceBrief(server);
   registerSearchDocuments(server);
+  registerQuerySchoolRollup(server);
 
   // Skill tools (return structured instructions for Claude to follow)
   registerSkillFinanceAudit(server);

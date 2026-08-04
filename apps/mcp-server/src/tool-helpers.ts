@@ -23,6 +23,7 @@ const SERVICE_ALLOWED_TOOLS = new Set([
   'query_finances',
   'get_finance_brief',
   'search_documents',
+  'query_school_rollup',
 ]);
 
 export async function runTool(
