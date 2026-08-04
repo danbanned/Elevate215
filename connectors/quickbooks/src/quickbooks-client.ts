@@ -21,10 +21,10 @@ interface TokenResult {
 
 export async function buildAuthorizationUrl(state: string): Promise<string> {
   const env = await loadEnv();
-  const clientId = env.QUICKBOOKS_CLIENT_ID;
+  const clientId = env.QUICKBOOKS_CLIENT_ID || env.QUICKBOOKS_DEV_CLIENT_ID;
   const redirectUri = env.QUICKBOOKS_REDIRECT_URI;
   if (!clientId || !redirectUri) {
-    throw new Error('QUICKBOOKS_CLIENT_ID / QUICKBOOKS_REDIRECT_URI not set');
+    throw new Error('QUICKBOOKS_CLIENT_ID (or QUICKBOOKS_DEV_CLIENT_ID) / QUICKBOOKS_REDIRECT_URI not set');
   }
 
   const params = new URLSearchParams({
@@ -39,11 +39,11 @@ export async function buildAuthorizationUrl(state: string): Promise<string> {
 
 export async function exchangeCodeForTokens(code: string): Promise<TokenResult> {
   const env = await loadEnv();
-  const clientId = env.QUICKBOOKS_CLIENT_ID;
-  const clientSecret = env.QUICKBOOKS_CLIENT_SECRET;
+  const clientId = env.QUICKBOOKS_CLIENT_ID || env.QUICKBOOKS_DEV_CLIENT_ID;
+  const clientSecret = env.QUICKBOOKS_CLIENT_SECRET || env.QUICKBOOKS_DEV_CLIENT_SECRET;
   const redirectUri = env.QUICKBOOKS_REDIRECT_URI;
   if (!clientId || !clientSecret || !redirectUri) {
-    throw new Error('QUICKBOOKS_CLIENT_ID / QUICKBOOKS_CLIENT_SECRET / QUICKBOOKS_REDIRECT_URI not set');
+    throw new Error('QUICKBOOKS_CLIENT_ID (or QUICKBOOKS_DEV_CLIENT_ID) / QUICKBOOKS_CLIENT_SECRET (or QUICKBOOKS_DEV_CLIENT_SECRET) / QUICKBOOKS_REDIRECT_URI not set');
   }
 
   const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');

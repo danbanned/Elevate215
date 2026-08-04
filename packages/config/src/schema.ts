@@ -53,6 +53,8 @@ export const envSchema = z.object({
   QUICKBOOKS_CLIENT_ID: optional,
   QUICKBOOKS_CLIENT_SECRET: optional,
   QUICKBOOKS_REDIRECT_URI: optional,
+  QUICKBOOKS_DEV_CLIENT_ID: optional,
+  QUICKBOOKS_DEV_CLIENT_SECRET: optional,
 
   NOTION_API_KEY: optional,
   NOTION_MEETING_TRANSCRIPTS_DB_ID: optional,
