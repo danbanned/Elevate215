@@ -20,6 +20,7 @@ out/
 *.pem
 # Google service account default naming: <project-id>-<hex>.json
 /lp-internal-ai-*.json
+connectors/google-sheets/data/
 
 # AWS
 .aws/

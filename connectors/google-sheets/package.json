@@ -15,6 +15,7 @@
     "@lp-ai/lib-db": "workspace:*",
     "dotenv": "^16.4.5",
     "googleapis": "^140.0.1",
+    "xlsx": "^0.18.5",
     "zod": "^3.23.0"
   },
   "devDependencies": {
