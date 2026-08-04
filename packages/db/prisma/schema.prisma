@@ -24,6 +24,85 @@ model FinanceSnapshot {
   @@map("finance_snapshots")
 }
 
+// PHL School Performance Model — "School Rollup" tab only (301 rows, one per
+// school). Wide/denormalized by design: one row per school, ~45 columns
+// mirroring the sheet, not split into related tables. See
+// docs/data-sources/school-rollup-dictionary.md for field-by-field definitions
+// and the 6 open questions with the client that some of this depends on.
+model SchoolRollup {
+  id String @id @default(uuid())
+
+  // ---------- Identity / school metadata ----------
+  // NOTE: this column's actual header in the source sheet (index 0) is
+  // malformed (" f", a stray artifact) — the sheet has no usable "AUN" header
+  // to preserve via @map anyway. The extractor MUST read this column by
+  // position (index 0), not by header lookup.
+  aun                       String   @map("aun")
+  schoolNumber              String   @map("school_number")
+  districtName              String   @map("district_name")
+  schoolName                String   @map("school_name")
+  schoolType                String   @map("school_type") // "District" | "Charter", derived from districtName
+  gradeSpan                 String?  @map("grade_span_2025_26") // blank for some cyber charters (open question)
+  pctBlackHispanic          Decimal? @db.Decimal(5, 2) @map("pct_black_hispanic_2025_26") // blank for 2 cyber charters; combination method unconfirmed (open question)
+  pctLowIncome              Decimal? @db.Decimal(5, 2) @map("pct_low_income_2025_26")
+  excludedSelectionCriteria Boolean  @map("excluded_selection_criteria") // never null — always True/False per Read Me
+
+  // ---------- PSSA Reading ----------
+  pssaReadingNScored       Int?     @map("pssa_reading_n_scored_2025")
+  pssaReadingPctProficient Decimal? @db.Decimal(5, 2) @map("pssa_reading_pct_proficient_2025")
+  pssaReadingPredicted     Decimal? @db.Decimal(5, 2) @map("pssa_reading_predicted")
+  pssaReadingResidual      Decimal? @db.Decimal(5, 2) @map("pssa_reading_residual")
+  pssaReadingBand          String?  @map("pssa_reading_band")
+
+  // ---------- PSSA Math ----------
+  pssaMathNScored       Int?     @map("pssa_math_n_scored_2025")
+  pssaMathPctProficient Decimal? @db.Decimal(5, 2) @map("pssa_math_pct_proficient_2025")
+  pssaMathPredicted     Decimal? @db.Decimal(5, 2) @map("pssa_math_predicted")
+  pssaMathResidual      Decimal? @db.Decimal(5, 2) @map("pssa_math_residual")
+  pssaMathBand          String?  @map("pssa_math_band")
+
+  // ---------- Keystone Algebra I ----------
+  keystoneAlgebraINScored       Int?     @map("keystone_algebra_i_n_scored_2025")
+  keystoneAlgebraIPctProficient Decimal? @db.Decimal(5, 2) @map("keystone_algebra_i_pct_proficient_2025")
+  keystoneAlgebraIPredicted     Decimal? @db.Decimal(5, 2) @map("keystone_algebra_i_predicted")
+  keystoneAlgebraIResidual      Decimal? @db.Decimal(5, 2) @map("keystone_algebra_i_residual")
+  keystoneAlgebraIBand          String?  @map("keystone_algebra_i_band")
+
+  // ---------- Keystone Biology ----------
+  keystoneBiologyNScored       Int?     @map("keystone_biology_n_scored_2025")
+  keystoneBiologyPctProficient Decimal? @db.Decimal(5, 2) @map("keystone_biology_pct_proficient_2025")
+  keystoneBiologyPredicted     Decimal? @db.Decimal(5, 2) @map("keystone_biology_predicted")
+  keystoneBiologyResidual      Decimal? @db.Decimal(5, 2) @map("keystone_biology_residual")
+  keystoneBiologyBand          String?  @map("keystone_biology_band")
+
+  // ---------- Keystone Literature ----------
+  keystoneLiteratureNScored       Int?     @map("keystone_literature_n_scored_2025")
+  keystoneLiteraturePctProficient Decimal? @db.Decimal(5, 2) @map("keystone_literature_pct_proficient_2025")
+  keystoneLiteraturePredicted     Decimal? @db.Decimal(5, 2) @map("keystone_literature_predicted")
+  keystoneLiteratureResidual      Decimal? @db.Decimal(5, 2) @map("keystone_literature_residual")
+  keystoneLiteratureBand          String?  @map("keystone_literature_band")
+
+  // ---------- Rollup / summary ----------
+  simpleAvgResidual             Decimal? @db.Decimal(5, 2) @map("simple_avg_residual")
+  enrollmentWeightedAvgResidual Decimal? @db.Decimal(5, 2) @map("enrollment_weighted_avg_residual")
+  aboveLineCount                Int      @map("above_line_count")
+  within5Count                  Int      @map("within_5_count")
+  belowLineCount                Int      @map("below_line_count")
+  testsWithData                 Int      @map("tests_with_data")
+  currentEnrollment             Int?     @map("current_enrollment_sy_2025_26") // charter-only; blank for 3 unmatched charters (open question)
+  authorizedEnrollmentCap       Int?     @map("authorized_enrollment_cap_sy_2025_26") // charter-only
+  unusedSeats                   Int?     @map("unused_seats") // charter-only; can be negative
+  fillTier                      String?  @map("fill_tier") // charter-only — buckets Unused Seats: Fill-A (100+), Fill-B (50-99), Fill-C (25-49); Expand-A/B for high performers under 25 unused seats
+  eapiTier                      String?  @map("eapi_tier") // charter-only, always null for District
+
+  lastSyncedAt DateTime @default(now()) @map("last_synced_at")
+
+  @@unique([aun, schoolNumber])
+  @@index([schoolType])
+  @@index([districtName])
+  @@map("school_rollup")
+}
+
 model DocumentChunk {
   id        String                       @id @default(uuid())
   source    String
