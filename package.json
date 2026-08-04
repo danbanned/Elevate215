@@ -2,6 +2,7 @@
   "name": "lp-internal-ai-v1",
   "private": true,
   "version": "1.0.0",
+  "packageManager": "pnpm@10.34.0",
   "scripts": {
     "db:generate": "pnpm --filter @lp-ai/lib-db generate",
     "db:migrate": "pnpm --filter @lp-ai/lib-db migrate",

@@ -8,6 +8,13 @@ const monorepoRoot = resolve(here, '..', '..');
 const nextConfig = {
   output: 'standalone',
   outputFileTracingRoot: monorepoRoot,
+  // The Prisma driver-adapter client's wasm query compiler
+  // (packages/db/generated/prisma/) isn't reliably picked up by automatic
+  // file tracing — the Dockerfile works around this with an explicit COPY;
+  // Vercel has no such step, so it needs this instead.
+  outputFileTracingIncludes: {
+    '/**': ['../../packages/db/generated/prisma/**/*'],
+  },
   serverExternalPackages: ['@lp-ai/lib-db', '@prisma/adapter-pg', 'pg'],
   reactStrictMode: true,
   async headers() {
