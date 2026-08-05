@@ -145,6 +145,41 @@ function SchoolDataFreshnessCard({
   );
 }
 
+// PLACEHOLDER ONLY — marks where the real embedded MCP chat feature will
+// live once built. This is a static, non-functional visual placeholder: no
+// form action, no state, no backend wiring. Building the actual embedded
+// chat (streaming responses, conversation history, MCP tool-call rendering)
+// is a separate, larger architecture task that's been deliberately deferred
+// — do not extend this component piecemeal into that feature. Replace the
+// whole thing when that work starts.
+function ChatPlaceholder(): JSX.Element {
+  return (
+    <section>
+      <h2 className="text-xl font-semibold text-ink">Ask a question</h2>
+      <div className="mt-4 rounded-lg border bg-white p-4 shadow-sm">
+        <p className="text-sm text-muted">
+          AI chat coming soon — for now, connect via Claude Desktop using the Elevate215 connector.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            disabled
+            placeholder="Ask about school performance or finances…"
+            className="flex-1 rounded border bg-slate-50 px-2 py-1 text-sm text-muted placeholder:text-muted"
+          />
+          <button
+            type="button"
+            disabled
+            className="cursor-not-allowed rounded border bg-slate-100 px-3 py-1 text-sm text-muted"
+          >
+            Send
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 const SCHOOL_QUESTIONS = [
   'Which charter schools have the most unused seats?',
   'Which schools are beating expectations in math?',
@@ -212,6 +247,8 @@ export default async function OverviewPage(): Promise<JSX.Element> {
           )}
         </div>
       </section>
+
+      <ChatPlaceholder />
 
       <section>
         <h2 className="text-xl font-semibold text-ink">Is your team using it?</h2>
