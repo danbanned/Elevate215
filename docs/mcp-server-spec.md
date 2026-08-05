@@ -119,6 +119,16 @@ School-level performance and enrollment data from the PHL School Performance Mod
       "description": "Scopes performance_band to one specific exam instead of matching any of the 5."
     },
     "include_excluded": { "type": "boolean", "default": true, "description": "If false, excludes rows where excluded_selection_criteria = true." },
+    "eapi_tier": {
+      "type": "string",
+      "enum": ["EAPI-A", "EAPI-B", "EAPI-C"],
+      "description": "Charter-only bucket of simple_avg_residual. Always null for District rows."
+    },
+    "fill_tier": {
+      "type": "string",
+      "enum": ["Fill-A", "Fill-B", "Fill-C", "Expand-A", "Expand-B"],
+      "description": "Charter-only bucket of unused_seats (Fill-A/B/C = most to fewest unused seats). Expand-A/B flags high performers with fewer than 25 unused seats instead."
+    },
     "limit": { "type": "number", "default": 50, "description": "Max 200." }
   },
   "required": []

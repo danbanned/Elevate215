@@ -162,6 +162,28 @@ describe('query_school_rollup tool', () => {
     expect(passedWhere.OR).toContainEqual({ pssaReadingBand: 'Within 5 pts' });
   });
 
+  it('filters by eapi_tier', () => {
+    const where = buildSchoolRollupWhere({ eapi_tier: 'EAPI-A' });
+    expect(where.eapiTier).toBe('EAPI-A');
+  });
+
+  it('filters by fill_tier', () => {
+    const where = buildSchoolRollupWhere({ fill_tier: 'Fill-B' });
+    expect(where.fillTier).toBe('Fill-B');
+  });
+
+  it('the eapi_tier and fill_tier filters reach Prisma correctly across a full tool call', async () => {
+    findMany.mockResolvedValue([baseRow()]);
+    const server = makeFakeServer();
+    registerQuerySchoolRollup(server as never);
+
+    await server.callTool({ eapi_tier: 'EAPI-A', fill_tier: 'Fill-B' });
+
+    const passedWhere = findMany.mock.calls[0]?.[0]?.where;
+    expect(passedWhere.eapiTier).toBe('EAPI-A');
+    expect(passedWhere.fillTier).toBe('Fill-B');
+  });
+
   it('toSchoolOutput converts Decimal-shaped percentage strings to plain numbers, not 0-1 scale', () => {
     const output = toSchoolOutput(baseRow() as never);
     expect(output.pct_black_hispanic).toBe(95.94);

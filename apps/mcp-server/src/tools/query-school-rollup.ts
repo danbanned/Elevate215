@@ -44,6 +44,16 @@ const inputSchema = {
     .boolean()
     .optional()
     .describe('Default true. If false, excludes rows where excluded_selection_criteria = true.'),
+  eapi_tier: z
+    .enum(['EAPI-A', 'EAPI-B', 'EAPI-C'])
+    .optional()
+    .describe('Charter-only bucket of simple_avg_residual. Always null for District rows.'),
+  fill_tier: z
+    .enum(['Fill-A', 'Fill-B', 'Fill-C', 'Expand-A', 'Expand-B'])
+    .optional()
+    .describe(
+      'Charter-only bucket of unused_seats (Fill-A/B/C = most to fewest unused seats). Expand-A/B flags high performers with fewer than 25 unused seats instead.',
+    ),
   limit: z.number().optional().describe('Default 50, max 200.'),
 };
 
@@ -158,6 +168,8 @@ export function buildSchoolRollupWhere(raw: Record<string, unknown>): Prisma.Sch
   const performanceBand = parseStr(raw, 'performance_band');
   const exam = parseStr(raw, 'exam') as ExamKey | undefined;
   const includeExcluded = typeof raw['include_excluded'] === 'boolean' ? (raw['include_excluded'] as boolean) : true;
+  const eapiTier = parseStr(raw, 'eapi_tier');
+  const fillTier = parseStr(raw, 'fill_tier');
 
   const where: Prisma.SchoolRollupWhereInput = {};
   if (schoolName) where.schoolName = { contains: schoolName, mode: 'insensitive' };
@@ -166,6 +178,8 @@ export function buildSchoolRollupWhere(raw: Record<string, unknown>): Prisma.Sch
   if (districtName) where.districtName = { contains: districtName, mode: 'insensitive' };
   if (schoolType) where.schoolType = schoolType;
   if (!includeExcluded) where.excludedSelectionCriteria = false;
+  if (eapiTier) where.eapiTier = eapiTier;
+  if (fillTier) where.fillTier = fillTier;
 
   if (performanceBand) {
     if (exam) {
