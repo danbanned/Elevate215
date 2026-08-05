@@ -51,6 +51,7 @@ interface ConnectorRow {
   connector: (typeof CONNECTORS)[number];
   lastFinishedAt: Date | null;
   lastStatus: PlainStatus;
+  recordCount: number | null;
   recent: Array<{
     startedAt: Date;
     status: PlainStatus;
@@ -59,19 +60,30 @@ interface ConnectorRow {
   }>;
 }
 
+// School Rollup is the only connector with a live, queryable record count today
+// (QuickBooks doesn't sync accounting data yet — see Known Gaps in CLAUDE.md).
+async function recordCountFor(connector: (typeof CONNECTORS)[number]): Promise<number | null> {
+  if (connector === 'google-sheets') return prisma.schoolRollup.count();
+  return null;
+}
+
 async function fetchConnectorStatus(): Promise<ConnectorRow[]> {
   return Promise.all(
     CONNECTORS.map(async (connector) => {
-      const recent = await prisma.syncRun.findMany({
-        where: { connector },
-        orderBy: { startedAt: 'desc' },
-        take: 5,
-      });
+      const [recent, recordCount] = await Promise.all([
+        prisma.syncRun.findMany({
+          where: { connector },
+          orderBy: { startedAt: 'desc' },
+          take: 5,
+        }),
+        recordCountFor(connector),
+      ]);
       const latest = recent[0];
       return {
         connector,
         lastFinishedAt: latest?.finishedAt ?? null,
         lastStatus: toPlainStatus(latest?.status ?? null),
+        recordCount,
         recent: recent.map((r) => ({
           startedAt: r.startedAt,
           status: toPlainStatus(r.status),
@@ -109,6 +121,7 @@ export default async function DataUpdatesPage(): Promise<JSX.Element> {
               <th className="px-4 py-2">Data source</th>
               <th className="px-4 py-2">Status</th>
               <th className="px-4 py-2">Last updated</th>
+              <th className="px-4 py-2">Records</th>
               <th className="px-4 py-2">Recent</th>
             </tr>
           </thead>
@@ -130,6 +143,9 @@ export default async function DataUpdatesPage(): Promise<JSX.Element> {
                   ) : (
                     'Not yet'
                   )}
+                </td>
+                <td className="px-4 py-3 text-xs tabular-nums text-muted">
+                  {r.recordCount === null ? '—' : r.recordCount.toLocaleString()}
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex flex-wrap gap-1">

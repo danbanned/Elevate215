@@ -65,6 +65,86 @@ function DataSourceLine({ source }: { source: DataSourceStatus }): JSX.Element {
   );
 }
 
+type Recency = 'fresh' | 'aging' | 'stale';
+
+// School Rollup refreshes on a school-year/test cycle, not daily — these
+// thresholds are deliberately loose compared to a typical "stale data" alert.
+function classifyRecency(when: Date | null): Recency {
+  if (!when) return 'stale';
+  const days = (Date.now() - when.getTime()) / (1000 * 60 * 60 * 24);
+  if (days <= 30) return 'fresh';
+  if (days <= 120) return 'aging';
+  return 'stale';
+}
+
+const RECENCY_CLASS: Record<Recency, string> = {
+  fresh: 'text-green-700',
+  aging: 'text-amber-700',
+  stale: 'text-red-700',
+};
+
+interface EnrollmentDataGap {
+  count: number;
+  schoolNames: string[];
+}
+
+async function fetchEnrollmentDataGaps(): Promise<EnrollmentDataGap> {
+  const rows = await prisma.schoolRollup.findMany({
+    where: {
+      schoolType: 'Charter',
+      currentEnrollment: null,
+      fillTier: null,
+      eapiTier: null,
+    },
+    select: { schoolName: true },
+    orderBy: { schoolName: 'asc' },
+  });
+  return { count: rows.length, schoolNames: rows.map((r) => r.schoolName) };
+}
+
+function SchoolDataFreshnessCard({
+  lastRefreshedAt,
+  gaps,
+}: {
+  lastRefreshedAt: Date | null;
+  gaps: EnrollmentDataGap;
+}): JSX.Element {
+  const recency = classifyRecency(lastRefreshedAt);
+  return (
+    <section>
+      <h2 className="text-xl font-semibold text-ink">School performance data — how current is it?</h2>
+      <div className="mt-4 space-y-3 rounded-lg border bg-white p-4 shadow-sm">
+        <div>
+          <div className="text-sm font-medium text-ink">School performance data</div>
+          <div className="text-xs text-muted">Updated through Spring 2025 test results</div>
+        </div>
+        <div className={`text-sm ${RECENCY_CLASS[recency]}`}>
+          {lastRefreshedAt ? (
+            <>
+              Last updated{' '}
+              <time dateTime={lastRefreshedAt.toISOString()} title={formatExactTime(lastRefreshedAt)}>
+                {formatRelativeTime(lastRefreshedAt)}
+              </time>
+            </>
+          ) : (
+            'Not updated yet'
+          )}
+        </div>
+        <div className="rounded bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Test scores are from Spring 2025. Enrollment and income data are from the current 2025-26
+          school year — one year newer. This is the standard approach for this dataset.
+        </div>
+        {gaps.count > 0 && (
+          <div className="text-xs text-muted" title={gaps.schoolNames.join(', ')}>
+            {gaps.count} charter school{gaps.count === 1 ? '' : 's'}{' '}
+            {gaps.count === 1 ? 'is' : 'are'} missing enrollment cap data
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 const SCHOOL_QUESTIONS = [
   'Which charter schools have the most unused seats?',
   'Which schools are beating expectations in math?',
@@ -81,12 +161,14 @@ async function fetchWeeklyQuestionCount(): Promise<number> {
 }
 
 export default async function OverviewPage(): Promise<JSX.Element> {
-  const [sources, questionCount] = await Promise.all([
+  const [sources, questionCount, enrollmentGaps] = await Promise.all([
     fetchDataSourceStatus(),
     fetchWeeklyQuestionCount(),
+    fetchEnrollmentDataGaps(),
   ]);
 
-  const schoolDataLive = sources.some((s) => s.name === 'School Performance Data' && s.state === 'updated');
+  const schoolDataSource = sources.find((s) => s.name === 'School Performance Data');
+  const schoolDataLive = schoolDataSource?.state === 'updated';
   const quickBooksLive = sources.some((s) => s.name === 'QuickBooks' && s.state !== 'not-connected');
   const exampleQuestions = [
     ...(schoolDataLive ? SCHOOL_QUESTIONS : []),
@@ -95,6 +177,10 @@ export default async function OverviewPage(): Promise<JSX.Element> {
 
   return (
     <div className="space-y-12">
+      {schoolDataLive && (
+        <SchoolDataFreshnessCard lastRefreshedAt={schoolDataSource.when} gaps={enrollmentGaps} />
+      )}
+
       <section>
         <h1 className="text-2xl font-semibold text-ink">Is your data current?</h1>
         <p className="mt-1 text-sm text-muted">When each of your data sources last updated.</p>
