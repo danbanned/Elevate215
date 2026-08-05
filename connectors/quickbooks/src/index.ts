@@ -23,6 +23,18 @@ export {
   exchangeCodeForTokens,
   saveQuickBooksCredentials,
   getQuickBooksAccessToken,
+  quickBooksRequest,
 } from './quickbooks-client.js';
-export type { SaveQuickBooksCredentialsInput } from './quickbooks-client.js';
-export { QuickBooksNotConnectedError, QuickBooksReauthRequiredError } from './errors.js';
+export type { SaveQuickBooksCredentialsInput, QuickBooksRequestOptions } from './quickbooks-client.js';
+export {
+  QuickBooksNotConnectedError,
+  QuickBooksReauthRequiredError,
+  QuickBooksApiError,
+  QuickBooksValidationError,
+  QuickBooksTransientError,
+  classifyQuickBooksApiError,
+  isQuickBooksError,
+} from './errors.js';
+export type { QuickBooksError, QuickBooksErrorContext, QuickBooksApiErrorDetail } from './errors.js';
+export { logQuickBooksError } from './quickbooks-error-logging.js';
+export type { QuickBooksErrorLogEntry, QuickBooksErrorLogSink } from './quickbooks-error-logging.js';

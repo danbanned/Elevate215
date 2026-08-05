@@ -1,11 +1,20 @@
 import { loadEnv } from '@lp-ai/lib-config';
 import { prisma } from '@lp-ai/lib-db';
 
-import { QuickBooksNotConnectedError, QuickBooksReauthRequiredError } from './errors.js';
+import {
+  QuickBooksApiError,
+  QuickBooksNotConnectedError,
+  QuickBooksReauthRequiredError,
+  classifyQuickBooksApiError,
+  type QuickBooksError,
+  type QuickBooksErrorContext,
+} from './errors.js';
+import { logQuickBooksError, type QuickBooksErrorLogSink } from './quickbooks-error-logging.js';
 
 const AUTH_URL = 'https://appcenter.intuit.com/connect/oauth2';
 const TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
 const SCOPE = 'com.intuit.quickbooks.accounting';
+const INTUIT_TID_HEADER = 'intuit_tid';
 
 // Matches Aplos's 60s buffer, but unlike Aplos there is no in-memory cache here —
 // every call re-reads the stored credential, since a refresh must be persisted to
@@ -17,6 +26,77 @@ interface TokenResult {
   accessToken: string;
   refreshToken: string;
   expiresIn: number;
+}
+
+export interface QuickBooksRequestOptions extends RequestInit {
+  /** Realm ID this request is scoped to — attached to any thrown error / log entry. */
+  realmId?: string;
+  /** Optional override for where errors get logged. Defaults to console. */
+  errorLogSink?: QuickBooksErrorLogSink;
+  /** Set false to skip auto-logging (e.g. if the caller wants to log it themselves). */
+  logErrors?: boolean;
+  /**
+   * Override how a non-ok response becomes an Error. The OAuth token endpoint
+   * uses this — its error body shape (`{ error, error_description }`) and its
+   * invalid_grant -> QuickBooksReauthRequiredError special case don't fit the
+   * Data API's classifyQuickBooksApiError. Omit for Data API calls, where the
+   * default classifier is correct.
+   */
+  classifyError?: (statusCode: number, bodyText: string, context: QuickBooksErrorContext) => QuickBooksError;
+}
+
+/**
+ * Shared low-level QuickBooks request wrapper — used by both the OAuth token
+ * calls below and (once Phase 2 is built) data calls. Captures the
+ * `intuit_tid` response header on every call and attaches it to whatever
+ * error gets thrown, so a failure can always be handed to Intuit support as
+ * "here's the exact request, here's the ID."
+ *
+ * On a non-ok response, classifies the failure (via `classifyError` if given,
+ * else `classifyQuickBooksApiError`), logs it through `logQuickBooksError`,
+ * and throws it — callers only need to unwrap a successful Response.
+ */
+export async function quickBooksRequest(
+  url: string,
+  options: QuickBooksRequestOptions = {},
+): Promise<Response> {
+  const { realmId, errorLogSink, logErrors = true, classifyError, ...fetchOptions } = options;
+
+  const response = await fetch(url, fetchOptions);
+  const intuitTid = response.headers.get(INTUIT_TID_HEADER) ?? undefined;
+
+  if (!response.ok) {
+    const context: QuickBooksErrorContext = { realmId, endpoint: safeEndpoint(url), intuitTid };
+    const bodyText = await response.clone().text();
+
+    const error: QuickBooksError = classifyError
+      ? classifyError(response.status, bodyText, context)
+      : classifyQuickBooksApiError(response.status, safeJsonParse(bodyText), context);
+
+    if (logErrors) {
+      await logQuickBooksError(error, errorLogSink);
+    }
+    throw error;
+  }
+
+  return response;
+}
+
+function safeJsonParse(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Strips query params / host so logs don't leak tokens or realm-specific query strings. */
+function safeEndpoint(url: string): string {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return url;
+  }
 }
 
 export async function buildAuthorizationUrl(state: string): Promise<string> {
@@ -47,7 +127,7 @@ export async function exchangeCodeForTokens(code: string): Promise<TokenResult> 
   }
 
   const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-  const r = await fetch(TOKEN_URL, {
+  const r = await quickBooksRequest(TOKEN_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -59,12 +139,16 @@ export async function exchangeCodeForTokens(code: string): Promise<TokenResult> 
       code,
       redirect_uri: redirectUri,
     }),
+    classifyError: (statusCode, bodyText, context) =>
+      new QuickBooksApiError(
+        `QuickBooks token exchange failed: ${statusCode} — ${bodyText.slice(0, 300)}`,
+        statusCode,
+        [],
+        context.realmId,
+        context.endpoint,
+        context.intuitTid,
+      ),
   });
-
-  if (!r.ok) {
-    const errText = await r.text();
-    throw new Error(`QuickBooks token exchange failed: ${r.status} ${r.statusText} — ${errText.slice(0, 300)}`);
-  }
 
   const tokens = (await r.json()) as { access_token: string; refresh_token: string; expires_in: number };
   return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token, expiresIn: tokens.expires_in };
@@ -79,7 +163,7 @@ async function refreshTokens(realmId: string, refreshToken: string): Promise<Tok
   }
 
   const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-  const r = await fetch(TOKEN_URL, {
+  const r = await quickBooksRequest(TOKEN_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -90,21 +174,27 @@ async function refreshTokens(realmId: string, refreshToken: string): Promise<Tok
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
     }),
+    realmId,
+    classifyError: (statusCode, bodyText, context) => {
+      let errorCode: string | undefined;
+      try {
+        errorCode = (JSON.parse(bodyText) as { error?: string }).error;
+      } catch {
+        // not JSON — fall through to the generic error below
+      }
+      if (statusCode === 400 && errorCode === 'invalid_grant') {
+        return new QuickBooksReauthRequiredError(realmId, bodyText.slice(0, 300), context.intuitTid);
+      }
+      return new QuickBooksApiError(
+        `QuickBooks token refresh failed: ${statusCode} — ${bodyText.slice(0, 300)}`,
+        statusCode,
+        [],
+        context.realmId,
+        context.endpoint,
+        context.intuitTid,
+      );
+    },
   });
-
-  if (!r.ok) {
-    const errText = await r.text();
-    let errorCode: string | undefined;
-    try {
-      errorCode = (JSON.parse(errText) as { error?: string }).error;
-    } catch {
-      // not JSON — fall through to the generic error below
-    }
-    if (r.status === 400 && errorCode === 'invalid_grant') {
-      throw new QuickBooksReauthRequiredError(realmId, errText.slice(0, 300));
-    }
-    throw new Error(`QuickBooks token refresh failed: ${r.status} ${r.statusText} — ${errText.slice(0, 300)}`);
-  }
 
   const tokens = (await r.json()) as { access_token: string; refresh_token: string; expires_in: number };
   return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token, expiresIn: tokens.expires_in };

@@ -23,8 +23,41 @@ vi.mock('@lp-ai/lib-config', () => ({
   }),
 }));
 
-const { getQuickBooksAccessToken } = await import('./quickbooks-client.js');
-const { QuickBooksNotConnectedError, QuickBooksReauthRequiredError } = await import('./errors.js');
+const { getQuickBooksAccessToken, quickBooksRequest } = await import('./quickbooks-client.js');
+const { QuickBooksNotConnectedError, QuickBooksReauthRequiredError, QuickBooksApiError } = await import(
+  './errors.js'
+);
+
+/**
+ * Minimal fetch Response double. quickBooksRequest reads `.headers.get(...)`
+ * on every response (success or failure) and, on failure, `.clone().text()` —
+ * real Response.clone() returns a second independent stream, but since
+ * nothing here reads the body twice, returning `this` is sufficient for a
+ * test double.
+ */
+function fakeResponse(opts: {
+  ok: boolean;
+  status?: number;
+  statusText?: string;
+  headers?: Record<string, string>;
+  bodyText?: string;
+  json?: () => Promise<unknown>;
+}): Response {
+  const headers = new Headers(opts.headers ?? {});
+  const bodyText = opts.bodyText ?? '';
+  const fake = {
+    ok: opts.ok,
+    status: opts.status ?? (opts.ok ? 200 : 400),
+    statusText: opts.statusText ?? '',
+    headers,
+    json: opts.json ?? (async () => JSON.parse(bodyText || '{}')),
+    text: async () => bodyText,
+    clone() {
+      return fake;
+    },
+  };
+  return fake as unknown as Response;
+}
 
 describe('getQuickBooksAccessToken', () => {
   beforeEach(() => {
@@ -63,10 +96,12 @@ describe('getQuickBooksAccessToken', () => {
       refreshToken: 'old-refresh',
       expiresAt: new Date(Date.now() - 60_000),
     });
-    vi.spyOn(global, 'fetch').mockResolvedValue({
-      ok: true,
-      json: async () => ({ access_token: 'new-access', refresh_token: 'new-refresh', expires_in: 3600 }),
-    } as Response);
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      fakeResponse({
+        ok: true,
+        json: async () => ({ access_token: 'new-access', refresh_token: 'new-refresh', expires_in: 3600 }),
+      }),
+    );
 
     const token = await getQuickBooksAccessToken('realm-1');
 
@@ -85,16 +120,66 @@ describe('getQuickBooksAccessToken', () => {
       refreshToken: 'revoked-refresh',
       expiresAt: new Date(Date.now() - 60_000),
     });
-    vi.spyOn(global, 'fetch').mockResolvedValue({
-      ok: false,
-      status: 400,
-      statusText: 'Bad Request',
-      text: async () => JSON.stringify({ error: 'invalid_grant' }),
-    } as Response);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      fakeResponse({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        bodyText: JSON.stringify({ error: 'invalid_grant' }),
+      }),
+    );
 
     await expect(getQuickBooksAccessToken('realm-1')).rejects.toBeInstanceOf(
       QuickBooksReauthRequiredError,
     );
     expect(upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('quickBooksRequest', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('resolves with the response on a successful call', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue(fakeResponse({ ok: true, bodyText: '{}' }));
+
+    const response = await quickBooksRequest('https://quickbooks.api.intuit.com/v3/company/123/query');
+
+    expect(response.ok).toBe(true);
+  });
+
+  it('attaches the intuit_tid header to the thrown error when present', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      fakeResponse({
+        ok: false,
+        status: 404,
+        headers: { intuit_tid: 'test-tid-123' },
+        bodyText: JSON.stringify({ Fault: { Error: [{ Message: 'Object Not Found', code: '610' }], type: 'ValidationFault' } }),
+      }),
+    );
+
+    await expect(
+      quickBooksRequest('https://quickbooks.api.intuit.com/v3/company/123/query', { realmId: '123' }),
+    ).rejects.toMatchObject({ intuitTid: 'test-tid-123' });
+  });
+
+  it('leaves intuitTid undefined when the header is absent', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      fakeResponse({ ok: false, status: 500, bodyText: '{}' }),
+    );
+
+    let thrown: InstanceType<typeof QuickBooksApiError> | undefined;
+    try {
+      await quickBooksRequest('https://quickbooks.api.intuit.com/v3/company/123/query', { realmId: '123' });
+    } catch (err) {
+      thrown = err as InstanceType<typeof QuickBooksApiError>;
+    }
+
+    expect(thrown).toBeInstanceOf(QuickBooksApiError);
+    expect(thrown?.intuitTid).toBeUndefined();
   });
 });

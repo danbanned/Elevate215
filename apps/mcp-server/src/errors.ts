@@ -3,7 +3,13 @@ export type ToolErrorCode =
   | 'no_records'
   | 'search_failed'
   | 'internal_error'
-  | 'not_yet_implemented';
+  | 'not_yet_implemented'
+  // Reserved for QuickBooks Phase 2 data-call tools (not yet built — no tool
+  // maps to these today). See "Intuit Error Handling Policies" in the root
+  // README: QuickBooksValidationError -> invalid_request,
+  // QuickBooksTransientError -> upstream_unavailable.
+  | 'invalid_request'
+  | 'upstream_unavailable';
 
 export interface ToolError {
   error: {

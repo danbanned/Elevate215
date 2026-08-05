@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { exchangeCodeForTokens, saveQuickBooksCredentials } from "@lp-ai/connector-quickbooks";
+import {
+  exchangeCodeForTokens,
+  saveQuickBooksCredentials,
+  isQuickBooksError,
+  logQuickBooksError,
+} from "@lp-ai/connector-quickbooks";
 
 const STATE_COOKIE = "qb_oauth_state";
 
@@ -27,7 +32,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     tokens = await exchangeCodeForTokens(code);
   } catch (err) {
-    console.error("QuickBooks token exchange failed:", err instanceof Error ? err.message : String(err));
+    if (isQuickBooksError(err)) {
+      await logQuickBooksError(err);
+    } else {
+      console.error("QuickBooks token exchange failed:", err instanceof Error ? err.message : String(err));
+    }
     return NextResponse.redirect(new URL("/quickbooks/error", req.url));
   }
 
