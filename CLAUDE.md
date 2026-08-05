@@ -239,6 +239,7 @@ What genuinely isn't built yet, as of this writing:
 - **`finance_snapshots` still has leftover Aplos rows** — these predate the decision to hide Aplos from Elevate215 entirely and should eventually be cleared. Until then, don't read this table from anything Elevate215-facing (the HQ finance dashboard deliberately doesn't).
 - **6 open data-dictionary questions on School Rollup**, unanswered by the client — see the "Open Questions" section in [docs/data-sources/school-rollup-dictionary.md](docs/data-sources/school-rollup-dictionary.md).
 - **CI/CD is Fargate-oriented for `apps/mcp-server`/`apps/sync`**; `apps/hq` deploys via direct EC2 SSH + `docker run`, not ECS at all (see the Deploy block under Commands). `infra/ecs/hq-taskdef.json` is stale/unused, kept only as reference from an earlier deployment approach — don't assume it's live.
+- **`apps/hq/tsconfig.json` is missing `noUncheckedIndexedAccess`**, despite this file documenting it above as a repo-wide convention — causes several `no-unnecessary-condition` lint findings in existing code (e.g. `apps/hq/app/sync/page.tsx`). Fix as a separate cleanup task.
 
 Two items sometimes flagged as gaps that are **already fixed**, worth knowing so they don't get "re-fixed" incorrectly: `.github/workflows/deploy.yml` already triggers on `main` (not just a stale `master`-only trigger — see the inline comment there), and `infra/iam/lp-github-deploy-trust-policy.json`'s OIDC trust is already scoped to the actual repo (`Drdraqounof/Elevate215`), not an old placeholder.
 
