@@ -1,5 +1,7 @@
 # Phase 10 — AWS EventBridge Cron Scheduling
 
+> **Note:** This guide is from the original client's AWS buildout — "Railway" below refers to *that* build's cron scheduling, not Elevate215's. Confusingly, Elevate215's `apps/mcp-server` is itself currently deployed live on Railway today (not ECS Fargate) — see the "App hosting" row in CLAUDE.md's Stack table for the current, accurate picture. Don't read this doc as describing where Elevate215's `apps/mcp-server` should end up; it's a pattern reference for EventBridge wiring only.
+
 **Goal:** Replace Railway's cron with AWS EventBridge schedule rules that trigger each connector sync on its own cadence, authenticated against the MCP server via a shared secret.
 
 **Prerequisites:**

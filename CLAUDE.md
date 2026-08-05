@@ -8,7 +8,7 @@ An internal AI intelligence layer for Elevate215 that lets team members query Cl
 
 `connectors/aplos/` also exists in this repo, but it is **not a data source for Elevate215** — Aplos is Launchpad's own internal accounting system, kept here only as a code-pattern reference for building `connectors/quickbooks/`. It must never be described as syncing Elevate215 data, and it's deliberately hidden from the entire HQ UI (sync status, data-source lists, everywhere). `finance_snapshots` currently still holds leftover Aplos rows from before this distinction was enforced — see Known Gaps.
 
-Primary deployment target is AWS EC2 + Docker (`apps/hq`) / ECS Fargate (`apps/mcp-server`, `apps/sync`), currently blocked on infra access; Vercel is a working fallback for `apps/hq` used to get a live HTTPS URL quickly (e.g. for the QuickBooks OAuth Redirect URI) — see the Deploy block under Commands, and the "App hosting" row in Stack. Because of that, "fully AWS-native" is no longer accurate for `apps/hq` specifically, even though it remains the production target.
+Primary deployment target is AWS EC2 + Docker (`apps/hq`) / ECS Fargate (`apps/mcp-server`, `apps/sync`), currently blocked on infra access; Vercel is a working fallback for `apps/hq` used to get a live HTTPS URL quickly (e.g. for the QuickBooks OAuth Redirect URI), and Railway is the working fallback for `apps/mcp-server` — see the Deploy block under Commands, and the "App hosting" row in Stack. Because of that, "fully AWS-native" is no longer accurate for `apps/hq` or `apps/mcp-server` specifically, even though EC2/ECS remain the production targets for both.
 
 This repo began as a fork of a similar internal AI platform built for a different nonprofit client. Every client-specific connector, Prisma model, and MCP tool from that original build was removed during a restructure; the shared architecture (connector pattern, storage layer, MCP server, HQ dashboard) was kept as the template for Elevate215. If you see a reference to that original client's name, program terminology (phases, cohorts, etc.), or a deleted connector (Notion, Slack, Roam, BigQuery, Google Drive) anywhere in code or docs, it's very likely stale — flag it rather than assuming it's still relevant.
 
@@ -23,7 +23,7 @@ This repo began as a fork of a similar internal AI platform built for a differen
 | Embeddings | OpenAI `text-embedding-3-large` (1536 dimensions) — wired but no live connector currently populates `document_chunks` |
 | Structured DB | Postgres 16 via Prisma ORM (local Docker today, Neon in production) |
 | Vector search | pgvector extension |
-| App hosting | `apps/hq`: dual target — AWS EC2 + Docker, SSH-deployed (production target, currently blocked on infra access) **and** Vercel (`apps/hq/vercel.json`, working fallback used to get a live HTTPS URL, e.g. for the QuickBooks OAuth Redirect URI). `apps/mcp-server`/`apps/sync`: AWS ECS Fargate |
+| App hosting | `apps/hq`: dual target — AWS EC2 + Docker, SSH-deployed (production target, currently blocked on infra access) **and** Vercel (`apps/hq/vercel.json`, working fallback used to get a live HTTPS URL, e.g. for the QuickBooks OAuth Redirect URI). `apps/mcp-server`: **Railway (current live deployment)** — Dockerfile-based, auto-deploys on push to `main`, public URL + `SYNC_SECRET` bearer-token auth; the ECS Fargate task def (`infra/ecs/mcp-server-taskdef.json`) exists but is not the current deployment path, kept as reference only — same status as the EC2 path for `apps/hq`. `apps/sync`: AWS ECS Fargate |
 | Cron / scheduling | AWS EventBridge |
 | Secrets | `.env` file on the host (current); AWS Secrets Manager supported via `USE_AWS_SECRETS=true` |
 | Monitoring | Sentry |
@@ -72,7 +72,7 @@ pnpm --filter @lp-ai/mcp-server dev:http  # HTTP at :8080, hot-reload
 
 # MCP server (production-like)
 pnpm --filter @lp-ai/mcp-server start      # stdio (for Claude Desktop)
-pnpm --filter @lp-ai/mcp-server start:http # HTTP at :8080 (for ECS / local testing)
+pnpm --filter @lp-ai/mcp-server start:http # HTTP at :8080 (for Railway / ECS / local testing)
 
 # Connector syncs
 pnpm sync:sheets                # google-sheets / School Rollup (live)
@@ -81,18 +81,26 @@ pnpm sync:quickbooks            # quickbooks (noop today — no sync logic yet)
 pnpm sync:all                   # all connectors in parallel
 
 # Deploy
-#   apps/hq        — dual target:
+#   apps/hq         — dual target:
 #     - AWS: EC2 + Docker over SSH, see .github/workflows/deploy.yml (deploy-hq job).
 #       This is the production target but is currently blocked on infra access.
 #     - Vercel: apps/hq/vercel.json, a working fallback for a live HTTPS URL today
 #       (e.g. the QuickBooks OAuth Redirect URI). Not wired into deploy.yml — deploys
 #       via Vercel's own git integration / `vercel` CLI, independently of the AWS path.
-#   apps/mcp-server, apps/sync — ECS Fargate, same workflow (deploy-mcp-server / deploy-sync jobs)
-#   Auto-deploys on push to main (CI-gated; only changed services deploy)
+#   apps/mcp-server — dual target, same shape as apps/hq:
+#     - AWS: ECS Fargate, see .github/workflows/deploy.yml (deploy-mcp-server job). This
+#       is the production target but is currently blocked on infra access, same blocker
+#       as apps/hq's EC2 path.
+#     - Railway: current live deployment — Dockerfile-based, auto-deploys on push to main,
+#       public URL + SYNC_SECRET bearer-token auth. Not wired into deploy.yml — deploys via
+#       Railway's own git integration, independently of the AWS path.
+#   apps/sync       — ECS Fargate only (deploy-sync job in deploy.yml)
+#   Auto-deploys on push to main for the AWS paths above (CI-gated; only changed services deploy)
 #   Manual: gh workflow run deploy.yml -f services=hq   (or all|mcp-server|sync)
-# Task definitions for the Fargate services (mcp-server, sync) live in infra/ecs/*-taskdef.json
-# and are actively used by deploy.yml. infra/ecs/hq-taskdef.json is stale/unused — apps/hq
-# no longer deploys via ECS, kept only as reference from an earlier deployment approach.
+# Task definitions for the Fargate services (mcp-server, sync) live in infra/ecs/*-taskdef.json.
+# infra/ecs/mcp-server-taskdef.json is stale/unused in practice — apps/mcp-server's real,
+# current deployment is Railway, not ECS — kept only as reference, same status as
+# infra/ecs/hq-taskdef.json. infra/ecs/sync-*-taskdef.json remain the real, active path for apps/sync.
 
 # Database tools
 pnpm db:studio                  # open Prisma Studio
@@ -238,7 +246,7 @@ What genuinely isn't built yet, as of this writing:
 - **Google Sheets API extraction** — School Rollup currently reads a local xlsx file (`connectors/google-sheets/data/`) instead of the live Sheets API. `school-rollup-extract.ts`'s `filePath` parameter is the injectable swap point for that (Option A, per the file's own comment).
 - **`finance_snapshots` still has leftover Aplos rows** — these predate the decision to hide Aplos from Elevate215 entirely and should eventually be cleared. Until then, don't read this table from anything Elevate215-facing (the HQ finance dashboard deliberately doesn't).
 - **6 open data-dictionary questions on School Rollup**, unanswered by the client — see the "Open Questions" section in [docs/data-sources/school-rollup-dictionary.md](docs/data-sources/school-rollup-dictionary.md).
-- **CI/CD is Fargate-oriented for `apps/mcp-server`/`apps/sync`**; `apps/hq` deploys via direct EC2 SSH + `docker run`, not ECS at all (see the Deploy block under Commands). `infra/ecs/hq-taskdef.json` is stale/unused, kept only as reference from an earlier deployment approach — don't assume it's live.
+- **CI/CD's ECS/Fargate path is only actually live for `apps/sync`**; `apps/hq` deploys via direct EC2 SSH + `docker run`, and `apps/mcp-server`'s real current deployment is Railway, not ECS (see the Deploy block under Commands). `infra/ecs/hq-taskdef.json` and `infra/ecs/mcp-server-taskdef.json` are both stale/unused in practice, kept only as reference from an earlier/still-blocked deployment approach — don't assume either is live.
 - **`apps/hq/tsconfig.json` is missing `noUncheckedIndexedAccess`**, despite this file documenting it above as a repo-wide convention — causes several `no-unnecessary-condition` lint findings in existing code (e.g. `apps/hq/app/sync/page.tsx`). Fix as a separate cleanup task.
 
 Two items sometimes flagged as gaps that are **already fixed**, worth knowing so they don't get "re-fixed" incorrectly: `.github/workflows/deploy.yml` already triggers on `main` (not just a stale `master`-only trigger — see the inline comment there), and `infra/iam/lp-github-deploy-trust-policy.json`'s OIDC trust is already scoped to the actual repo (`Drdraqounof/Elevate215`), not an old placeholder.

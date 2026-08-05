@@ -312,6 +312,54 @@ Each connector's `sync()` is wrapped by `runSync()`, which writes a success/erro
 
 ---
 
+## Intuit Error Handling Policies
+
+QuickBooks-specific error handling, all in `connectors/quickbooks/src/`:
+
+**Error class hierarchy** (`errors.ts`):
+
+```
+Error
+├── QuickBooksNotConnectedError      — no credential row for this realmId (auth)
+├── QuickBooksReauthRequiredError    — refresh token expired/revoked (auth)
+└── QuickBooksApiError               — a data-endpoint response QuickBooks itself rejected
+    ├── QuickBooksValidationError    — 400/404/other 4xx: the request is malformed
+    │                                  (bad date range, invalid account ref, etc.) — not
+    │                                  an auth problem, retrying unchanged never helps
+    └── QuickBooksTransientError     — 429/5xx: rate-limited or QuickBooks-side failure —
+                                       `.retryable` is true, retrying later may succeed
+```
+
+The auth errors (`QuickBooksNotConnectedError`, `QuickBooksReauthRequiredError`) and the
+`QuickBooksApiError` family are deliberately separate branches, not siblings under one
+shared base class — a credential problem and a malformed-request problem should never be
+confusable at a glance. `classifyQuickBooksApiError()` turns a Data API HTTP status +
+`Fault` response body into the right `QuickBooksApiError` subtype.
+
+**All QuickBooks calls must go through `quickBooksRequest()`** (`quickbooks-client.ts`) —
+never call `fetch()` directly against Intuit. This is what both the OAuth token
+calls (exchange + refresh) and any future Phase 2 data calls route through, so
+`intuit_tid` capture and error classification stay consistent everywhere instead of
+depending on whichever call site remembered to add them. The OAuth token endpoint
+supplies its own `classifyError` override (different error body shape, plus the
+`invalid_grant` → `QuickBooksReauthRequiredError` special case) rather than using the
+default Data API classifier.
+
+**What gets logged on every QuickBooks error**, via `logQuickBooksError()`
+(`quickbooks-error-logging.ts`): `realmId`, `endpoint`, `intuit_tid`, HTTP status,
+QuickBooks' own error code/detail, timestamp, and (for `QuickBooksApiError`s)
+whether it's retryable. `intuit_tid` specifically exists so Intuit's own support team
+can look up a failed request instantly if we ever need to escalate to them — the
+difference between "here's the exact request, here's the ID" and "something failed
+sometime yesterday."
+
+**Open question, not resolved here:** whether these logs should stay as structured
+console output (today's default) or move to a dedicated, queryable table (e.g. a
+Prisma model) — see item #3 in `Error_Handling_Support_Pitch (1).md`. `logQuickBooksError()`
+takes a pluggable `sink`, so this can change later without touching any call site.
+
+---
+
 ## Current Status
 
 | Area | State |
