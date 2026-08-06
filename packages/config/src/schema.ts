@@ -55,6 +55,19 @@ export const envSchema = z.object({
   QUICKBOOKS_REDIRECT_URI: optional,
   QUICKBOOKS_DEV_CLIENT_ID: optional,
   QUICKBOOKS_DEV_CLIENT_SECRET: optional,
+  // Sandbox-app credentials — separate from QUICKBOOKS_CLIENT_ID/SECRET
+  // (the real app used for Stacy's actual authorization). Used only by
+  // quickbooks-client.ts's token-endpoint calls when operating in sandbox
+  // mode (see isSandboxMode()) — a refresh token is tied to the exact
+  // Intuit app that issued it.
+  QUICKBOOKS_CLIENT_ID_SANDBOX: optional,
+  QUICKBOOKS_CLIENT_SECRET_SANDBOX: optional,
+  // Accounting API host. Unset defaults to the sandbox host (see
+  // quickbooks-accounting-client.ts) — production Intuit approval hasn't
+  // landed yet (see CLAUDE_NOTES-fromDaniel.MD), so sandbox is the only
+  // thing that currently works. Must be set explicitly to the production
+  // host once that approval lands; there is no environment-based switch.
+  QUICKBOOKS_API_BASE_URL: optional,
 
   NOTION_API_KEY: optional,
   NOTION_MEETING_TRANSCRIPTS_DB_ID: optional,

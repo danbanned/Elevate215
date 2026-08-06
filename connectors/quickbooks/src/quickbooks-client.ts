@@ -15,6 +15,7 @@ const AUTH_URL = 'https://appcenter.intuit.com/connect/oauth2';
 const TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
 const SCOPE = 'com.intuit.quickbooks.accounting';
 const INTUIT_TID_HEADER = 'intuit_tid';
+export const QUICKBOOKS_SANDBOX_API_BASE_URL = 'https://sandbox-quickbooks.api.intuit.com';
 
 // Matches Aplos's 60s buffer, but unlike Aplos there is no in-memory cache here —
 // every call re-reads the stored credential, since a refresh must be persisted to
@@ -99,6 +100,19 @@ function safeEndpoint(url: string): string {
   }
 }
 
+// Mirrors quickbooks-accounting-client.ts's sandbox/production host
+// selection. Sandbox mode is either QUICKBOOKS_API_BASE_URL being unset
+// (defaults to the sandbox host) OR explicitly set to that same sandbox
+// host — not just "unset," since ours is set explicitly. When in sandbox
+// mode, token-endpoint calls also need sandbox-app credentials, not the
+// production app's QUICKBOOKS_CLIENT_ID/SECRET — Intuit ties a refresh
+// token to the specific app that issued it; using the wrong pair fails
+// with invalid_grant ("Incorrect Token type or clientID"), not a clearer
+// error.
+function isSandboxMode(env: { QUICKBOOKS_API_BASE_URL?: string | undefined }): boolean {
+  return !env.QUICKBOOKS_API_BASE_URL || env.QUICKBOOKS_API_BASE_URL === QUICKBOOKS_SANDBOX_API_BASE_URL;
+}
+
 export async function buildAuthorizationUrl(state: string): Promise<string> {
   const env = await loadEnv();
   const clientId = env.QUICKBOOKS_CLIENT_ID || env.QUICKBOOKS_DEV_CLIENT_ID;
@@ -119,8 +133,11 @@ export async function buildAuthorizationUrl(state: string): Promise<string> {
 
 export async function exchangeCodeForTokens(code: string): Promise<TokenResult> {
   const env = await loadEnv();
-  const clientId = env.QUICKBOOKS_CLIENT_ID || env.QUICKBOOKS_DEV_CLIENT_ID;
-  const clientSecret = env.QUICKBOOKS_CLIENT_SECRET || env.QUICKBOOKS_DEV_CLIENT_SECRET;
+  const sandbox = isSandboxMode(env);
+  const clientId =
+    (sandbox && env.QUICKBOOKS_CLIENT_ID_SANDBOX) || env.QUICKBOOKS_CLIENT_ID || env.QUICKBOOKS_DEV_CLIENT_ID;
+  const clientSecret =
+    (sandbox && env.QUICKBOOKS_CLIENT_SECRET_SANDBOX) || env.QUICKBOOKS_CLIENT_SECRET || env.QUICKBOOKS_DEV_CLIENT_SECRET;
   const redirectUri = env.QUICKBOOKS_REDIRECT_URI;
   if (!clientId || !clientSecret || !redirectUri) {
     throw new Error('QUICKBOOKS_CLIENT_ID (or QUICKBOOKS_DEV_CLIENT_ID) / QUICKBOOKS_CLIENT_SECRET (or QUICKBOOKS_DEV_CLIENT_SECRET) / QUICKBOOKS_REDIRECT_URI not set');
@@ -156,8 +173,9 @@ export async function exchangeCodeForTokens(code: string): Promise<TokenResult> 
 
 async function refreshTokens(realmId: string, refreshToken: string): Promise<TokenResult> {
   const env = await loadEnv();
-  const clientId = env.QUICKBOOKS_CLIENT_ID;
-  const clientSecret = env.QUICKBOOKS_CLIENT_SECRET;
+  const sandbox = isSandboxMode(env);
+  const clientId = (sandbox && env.QUICKBOOKS_CLIENT_ID_SANDBOX) || env.QUICKBOOKS_CLIENT_ID;
+  const clientSecret = (sandbox && env.QUICKBOOKS_CLIENT_SECRET_SANDBOX) || env.QUICKBOOKS_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
     throw new Error('QUICKBOOKS_CLIENT_ID / QUICKBOOKS_CLIENT_SECRET not set');
   }
