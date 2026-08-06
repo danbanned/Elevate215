@@ -23,16 +23,16 @@ export async function Nav() {
           </Link>
           <nav className="flex items-center gap-4 text-sm text-muted">
             <Link href="/" className="hover:text-ink">
-              Overview
+              Home
             </Link>
             <Link href="/dashboard/finance" className="hover:text-ink">
-              Finances
-            </Link>
-            <Link href="/sync" className="hover:text-ink">
-              Data updates
+              Finance
             </Link>
             <Link href="/tools" className="hover:text-ink">
-              Activity
+              AI Activity
+            </Link>
+            <Link href="/sync" className="hover:text-ink">
+              Data Pipeline
             </Link>
             {isAdmin && (
               <Link href="/admin" className="hover:text-ink">
