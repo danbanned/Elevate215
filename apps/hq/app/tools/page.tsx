@@ -47,9 +47,9 @@ export default async function ActivityPage({ searchParams }: PageProps): Promise
   ]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       <header>
-        <h1 className="text-2xl font-semibold text-ink">Activity</h1>
+        <h1 className="text-2xl font-semibold text-ink">AI Activity</h1>
         <p className="mt-1 text-sm text-muted">
           Who&apos;s been using the system and what they&apos;ve been asking, most recent first.
         </p>
@@ -133,7 +133,7 @@ export default async function ActivityPage({ searchParams }: PageProps): Promise
                         </div>
                         <div>
                           <span className="font-medium text-muted">Duration:</span>{' '}
-                          {r.durationMs !== null ? `${r.durationMs.toString()} ms` : '—'}
+                          {r.durationMs !== null ? `${r.durationMs.toString()} ms` : 'not recorded'}
                         </div>
                         {r.error && (
                           <div>

@@ -46,6 +46,9 @@ function DataSourceLine({ source }: { source: DataSourceStatus }): JSX.Element {
             {formatRelativeTime(source.when)}
           </time>
         </div>
+        {source.name === 'QuickBooks' && (
+          <div className="mt-1 text-xs text-amber-700">Plan tier not confirmed</div>
+        )}
       </div>
     );
   }
@@ -211,7 +214,7 @@ export default async function OverviewPage(): Promise<JSX.Element> {
   ];
 
   return (
-    <div className="space-y-12">
+    <div className="space-y-10">
       {schoolDataLive && (
         <SchoolDataFreshnessCard lastRefreshedAt={schoolDataSource.when} gaps={enrollmentGaps} />
       )}

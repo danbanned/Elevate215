@@ -14,44 +14,65 @@ export const dynamic = 'force-dynamic';
 // empty state — nothing here is ever fabricated.
 // ---------------------------------------------------------------------------
 
-async function fetchQuickBooksConnection(): Promise<{
-  connected: boolean;
+// Three real, distinct states — a fourth ("healthy", plan tier confirmed)
+// exists in principle but is never reachable today, since QBO tier is not
+// confirmed anywhere in this project. Showing "Connected" from credential
+// existence alone (the old check) was misleading: connector_credentials.
+// updatedAt is a token-refresh timestamp, not evidence that any data has
+// actually synced.
+type QuickBooksConnectionState = 'not-authorized' | 'never-synced' | 'synced-tier-unknown';
+
+interface QuickBooksConnectionStatus {
+  state: QuickBooksConnectionState;
   lastSyncedAt: Date | null;
-}> {
-  const credential = await prisma.connectorCredential.findFirst({
-    where: { connector: 'quickbooks' },
-    orderBy: { updatedAt: 'desc' },
-  });
-  return { connected: credential !== null, lastSyncedAt: credential?.updatedAt ?? null };
 }
 
-function ConnectionBanner({
-  connected,
-  lastSyncedAt,
-}: {
-  connected: boolean;
-  lastSyncedAt: Date | null;
-}): JSX.Element {
-  if (connected) {
+async function fetchQuickBooksConnectionStatus(): Promise<QuickBooksConnectionStatus> {
+  const [credential, latestSync] = await Promise.all([
+    prisma.connectorCredential.findFirst({ where: { connector: 'quickbooks' } }),
+    prisma.financeSnapshot.findFirst({
+      where: { tabName: 'quickbooks:profit_and_loss' },
+      orderBy: { lastSyncedAt: 'desc' },
+    }),
+  ]);
+
+  if (!credential) return { state: 'not-authorized', lastSyncedAt: null };
+  if (!latestSync) return { state: 'never-synced', lastSyncedAt: null };
+  return { state: 'synced-tier-unknown', lastSyncedAt: latestSync.lastSyncedAt };
+}
+
+function ConnectionBanner({ status }: { status: QuickBooksConnectionStatus }): JSX.Element {
+  if (status.state === 'not-authorized') {
     return (
-      <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-4 py-3">
-        <div className="text-sm text-green-800">
-          <span className="font-medium">Connected</span>
-          {' — last synced '}
-          {lastSyncedAt ? formatExactTime(lastSyncedAt) : 'unknown'}
+      <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-sm text-ink">QuickBooks not yet connected</div>
+        <Link
+          href="/api/quickbooks/connect"
+          className="inline-flex w-fit rounded bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+        >
+          Connect QuickBooks
+        </Link>
+      </div>
+    );
+  }
+  if (status.state === 'never-synced') {
+    return (
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+        <div className="text-sm text-amber-800">
+          <span className="font-medium">Connected</span> — waiting on the first sync. No figures
+          will show until data has synced at least once.
         </div>
       </div>
     );
   }
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="text-sm text-ink">QuickBooks not yet connected</div>
-      <Link
-        href="/api/quickbooks/connect"
-        className="inline-flex w-fit rounded bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-      >
-        Connect QuickBooks
-      </Link>
+    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+      <div className="text-sm text-amber-800">
+        <span className="font-medium">Synced</span>
+        {' — last synced '}
+        {status.lastSyncedAt ? formatExactTime(status.lastSyncedAt) : 'recently'}
+        {' · plan tier not confirmed — some figures may be unavailable at your current QuickBooks plan'}
+      </div>
     </div>
   );
 }
@@ -141,7 +162,13 @@ function MultiYearTrendsCard({ trends }: { trends: YearlyTrend[] }): JSX.Element
           <div key={t.label} className="flex items-center justify-between text-sm">
             <span className="text-muted">{t.label}</span>
             <span className="font-medium tabular-nums text-ink">
-              {t.netIncome === null ? '—' : formatCurrency(t.netIncome)}
+              {t.netIncome === null ? (
+                <span className="text-xs font-normal text-muted" title="Not available for this period">
+                  not available
+                </span>
+              ) : (
+                formatCurrency(t.netIncome)
+              )}
             </span>
           </div>
         ))}
@@ -239,11 +266,12 @@ async function fetchLatestProfitAndLossByYear(): Promise<YearlyTrend[] | null> {
 }
 
 export default async function FinanceDashboardPage(): Promise<JSX.Element> {
-  const [{ connected, lastSyncedAt }, profitAndLoss, yearlyTrends] = await Promise.all([
-    fetchQuickBooksConnection(),
+  const [connectionStatus, profitAndLoss, yearlyTrends] = await Promise.all([
+    fetchQuickBooksConnectionStatus(),
     fetchLatestProfitAndLoss(),
     fetchLatestProfitAndLossByYear(),
   ]);
+  const connected = connectionStatus.state !== 'not-authorized';
 
   // QuickBooks accounting sync (Phase 2) isn't built yet, so these stay
   // empty regardless of connection — but the message tells the ED which
@@ -264,7 +292,7 @@ export default async function FinanceDashboardPage(): Promise<JSX.Element> {
         </p>
       </header>
 
-      <ConnectionBanner connected={connected} lastSyncedAt={lastSyncedAt} />
+      <ConnectionBanner status={connectionStatus} />
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {/* Source: QuickBooks ProfitAndLoss report — Total Income (revenue half only). */}
@@ -273,7 +301,7 @@ export default async function FinanceDashboardPage(): Promise<JSX.Element> {
             title="Revenue vs. goal"
             subtitle="How much you've raised against this year's target."
             primaryValue={profitAndLoss.totalIncome}
-            primaryLabel="Total Income (test data)"
+            primaryLabel="Total Revenue (test data)"
             secondaryMessage={forecastNotBuiltMessage}
           />
         ) : (

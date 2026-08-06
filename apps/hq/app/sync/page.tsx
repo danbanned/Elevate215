@@ -106,9 +106,9 @@ function StatusBadge({ status }: { status: PlainStatus }): JSX.Element {
 export default async function DataUpdatesPage(): Promise<JSX.Element> {
   const rows = await fetchConnectorStatus();
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       <header>
-        <h1 className="text-2xl font-semibold text-ink">Data updates</h1>
+        <h1 className="text-2xl font-semibold text-ink">Data Pipeline</h1>
         <p className="mt-1 text-sm text-muted">
           Where your information comes from and when it last refreshed.
         </p>
@@ -131,6 +131,9 @@ export default async function DataUpdatesPage(): Promise<JSX.Element> {
                 <td className="px-4 py-3 font-medium">{CONNECTOR_LABELS[r.connector]}</td>
                 <td className="px-4 py-3">
                   <StatusBadge status={r.lastStatus} />
+                  {r.connector === 'quickbooks' && r.lastFinishedAt !== null && (
+                    <div className="mt-1 text-[11px] text-amber-700">Plan tier not confirmed</div>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-xs text-muted">
                   {r.lastFinishedAt ? (
@@ -144,8 +147,12 @@ export default async function DataUpdatesPage(): Promise<JSX.Element> {
                     'Not yet'
                   )}
                 </td>
-                <td className="px-4 py-3 text-xs tabular-nums text-muted">
-                  {r.recordCount === null ? '—' : r.recordCount.toLocaleString()}
+                <td className="px-4 py-3 text-xs text-muted">
+                  {r.recordCount === null ? (
+                    <span title="QuickBooks tracks reports, not a single record count">No single count</span>
+                  ) : (
+                    <span className="tabular-nums">{r.recordCount.toLocaleString()}</span>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex flex-wrap gap-1">
